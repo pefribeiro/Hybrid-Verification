@@ -490,7 +490,8 @@ lemma "(x\<^sup>2 + y\<^sup>2 = 1)\<^sub>e \<le> |{x` = -y, y` = x}] (x\<^sup>2 
   apply (subst fbox_solve[where \<phi>="\<lambda>t. [x \<leadsto> $x * cos t + - 1 * $y * sin t, y \<leadsto> $y * cos t + $x * sin t]"])
   apply (clarsimp simp: local_flow_on_def)
   apply (unfold_locales; clarsimp?)
-     apply (lipschitz 1, simp add: abs_minus_commute norm_Pair)
+  apply (lipschitz 1)
+  apply ( simp add: abs_minus_commute norm_Pair)
      apply vderiv
     apply expr_simp
   by expr_simp (smt (verit, ccfv_SIG) norm_rotate_eq(1))

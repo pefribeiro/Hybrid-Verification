@@ -10,7 +10,7 @@ theory Evolution_Commands
     Correctness_Specs
     "Framed_ODEs.Framed_ODEs"
 begin
-
+thm has_real_derivative_iff_has_vector_derivative
 
 subsection \<open> Analytic dynamics \<close>
 
