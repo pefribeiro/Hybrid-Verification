@@ -545,7 +545,7 @@ lemma "0 \<le> arccos x \<longleftrightarrow> (-1 \<le> x \<and> x \<le> 1)"
   oops
 
 lemma "\<^bold>{True\<^bold>} AP \<^bold>{ft \<le> f\<^sub>m\<^sub>a\<^sub>x\<^bold>}"
-  apply (simp add: wp usubst_eval)
+  apply (simp add: wlp usubst_eval)
   oops
 
 (*
@@ -566,7 +566,7 @@ lemma "\<^bold>{ (\<parallel>angOfVec(nextWP - p) - \<phi>\<parallel>)\<^sup>2 <
   apply (subst hoare_diff_inv_on')
   apply (subgoal_tac "(Collect ((\<le>) 0))\<^sub>e = ({t. t \<ge> 0})\<^sub>e")
    prefer 2 apply simp
-  apply (erule ssubst)
+  apply simp
   apply (rule_tac lderiv_rules)
      apply (simp_all add: ldifferentiable closure)
    apply (rule ldifferentiable, simp, expr_simp)

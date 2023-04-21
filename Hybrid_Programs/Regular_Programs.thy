@@ -16,7 +16,7 @@ subsection \<open> Skip \<close>
 
 definition [prog_defs]: "skip = (\<lambda>s. {s})"
 
-lemma fbox_skip [wp]: "|skip] P = P"
+lemma fbox_skip [wlp]: "|skip] P = P"
   unfolding fbox_def skip_def by simp
 
 lemma fdia_skip: "|skip\<rangle> P = P"
@@ -30,7 +30,7 @@ subsection \<open> Abort \<close>
 
 definition [prog_defs]: "abort = (\<lambda>s. {})"
 
-lemma fbox_abort [wp]: "|abort] P = (True)\<^sub>e"
+lemma fbox_abort [wlp]: "|abort] P = (True)\<^sub>e"
   unfolding fbox_def abort_def by auto
 
 lemma fdia_abort: "|abort\<rangle> P = (False)\<^sub>e"
@@ -51,7 +51,7 @@ syntax
 translations
   "_test P" == "CONST test (P)\<^sub>e"
 
-lemma fbox_test [wp]: "|\<questiondown>P?] Q = (P \<longrightarrow> Q)\<^sub>e"
+lemma fbox_test [wlp]: "|\<questiondown>P?] Q = (P \<longrightarrow> Q)\<^sub>e"
   unfolding fbox_def test_def by (simp add: expr_defs)
 
 lemma fdia_test: "|\<questiondown>P?\<rangle> Q = (P \<and> Q)\<^sub>e"
@@ -82,13 +82,13 @@ lemma fbox_assign: "|x ::= e] Q = (Q\<lbrakk>e/x\<rbrakk>)\<^sub>e"
 lemma hoare_assign: "\<^bold>{Q\<lbrakk>e/x\<rbrakk>\<^bold>} (x ::= e) \<^bold>{Q\<^bold>}"
   by (auto simp: fbox_assign)
 
-lemma fbox_assigns [wp]: "|\<langle>\<sigma>\<rangle>] Q = \<sigma> \<dagger> (Q)\<^sub>e"
+lemma fbox_assigns [wlp]: "|\<langle>\<sigma>\<rangle>] Q = \<sigma> \<dagger> (Q)\<^sub>e"
   by (simp add: assigns_def expr_defs fbox_def)
 
 lemma H_assign_floyd_hoare:
   assumes "vwb_lens x"
   shows "\<^bold>{p\<^bold>} x ::= e \<^bold>{\<exists> v . p\<lbrakk>\<guillemotleft>v\<guillemotright>/x\<rbrakk> \<and> $x = e\<lbrakk>\<guillemotleft>v\<guillemotright>/x\<rbrakk>\<^bold>}"
-  using assms apply (simp add: wp, expr_auto)
+  using assms apply (simp add: wlp, expr_auto)
   by (metis vwb_lens_def wb_lens.source_stability)
 
 lemma fdia_assign: "|x ::= e\<rangle> P = (P\<lbrakk>e/x\<rbrakk>)\<^sub>e"
@@ -100,7 +100,7 @@ subsection \<open> Nondeterministic assignments \<close>
 definition nondet_assign :: "('a \<Longrightarrow> 's) \<Rightarrow> 's prog" ("(2_ ::= ?)" [64] 65)
   where [prog_defs]: "(x ::= ?) = (\<lambda>s. {(put\<^bsub>x\<^esub> s k)|k. True})"
 
-lemma fbox_nondet_assign [wp]: "|x ::= ?] P = (\<forall>k. P\<lbrakk>k/x\<rbrakk>)\<^sub>e"
+lemma fbox_nondet_assign [wlp]: "|x ::= ?] P = (\<forall>k. P\<lbrakk>k/x\<rbrakk>)\<^sub>e"
   unfolding fbox_def nondet_assign_def 
   by (auto simp add: fun_eq_iff expr_defs)
 
@@ -117,11 +117,14 @@ subsection \<open> Nondeterministic choice \<close>
 definition nondet_choice :: "'s prog \<Rightarrow> 's prog \<Rightarrow> 's prog" (infixr "\<sqinter>" 60) 
   where [prog_defs]: "nondet_choice F G = (\<lambda> s. F s \<union> G s)"
 
-lemma fbox_choice [wp]: "|F \<sqinter> G] P = ( |F] P \<and> |G] P)\<^sub>e"
+lemma fbox_choice [wlp]: "|F \<sqinter> G] P = ( |F] P \<and> |G] P)\<^sub>e"
   unfolding fbox_def nondet_choice_def by auto
 
 lemma le_fbox_choice_iff: "P \<le> |F \<sqinter> G] Q \<longleftrightarrow> P \<le> |F] Q \<and> P \<le> |G] Q"
   unfolding fbox_def nondet_choice_def by auto
+
+lemma le_fbox_choice_iff': "P \<le> ( |F \<sqinter> G] Q)\<^sub>e \<longleftrightarrow> P \<le> |F] Q \<and> P \<le> |G] Q"
+  unfolding fbox_def nondet_choice_def by expr_auto
 
 lemma hoare_choice: 
   "\<^bold>{P\<^bold>} F \<^bold>{Q\<^bold>} \<Longrightarrow> \<^bold>{P\<^bold>} G \<^bold>{Q\<^bold>} \<Longrightarrow> \<^bold>{P\<^bold>} (F \<sqinter> G) \<^bold>{Q\<^bold>}"
@@ -138,7 +141,7 @@ syntax
 
 translations "_Nondet_choice i I P" == "CONST Nondet_choice (\<lambda> i. P) I"
 
-lemma fbox_Choice [wp]: "|\<Sqinter> i\<in>I. F(i)] P = (\<forall> i\<in>\<guillemotleft>I\<guillemotright>. |F(i)] P)\<^sub>e"
+lemma fbox_Choice [wlp]: "|\<Sqinter> i\<in>I. F(i)] P = (\<forall> i\<in>\<guillemotleft>I\<guillemotright>. |F(i)] P)\<^sub>e"
   by (auto simp add: fbox_def Nondet_choice_def fun_eq_iff)
 
 
@@ -162,7 +165,7 @@ lemma kcomp_assoc: "f ; g ; h = f ; (g ; h)"
   unfolding kcomp_eq 
   by (auto simp: fun_eq_iff)
 
-lemma fbox_kcomp[wp]: "|G ; F] P = |G] |F] P"
+lemma fbox_kcomp[wlp]: "|G ; F] P = |G] |F] P"
   unfolding fbox_def kcomp_def by auto
 
 lemma hoare_kcomp:
@@ -186,6 +189,22 @@ lemma hoare_fwd_assign:
   using assms
   unfolding kcomp_def assigns_def fbox_def le_fun_def
   by (expr_simp) (metis vwb_lens.put_eq vwb_lens_wb wb_lens_def weak_lens.put_get)
+
+lemma fbox_invI_break: 
+  "P \<le> |Y] I \<Longrightarrow> I \<le> |X] I \<Longrightarrow> I \<le> Q \<Longrightarrow> P \<le> |Y ; X INV I] Q"
+  apply(subst fbox_to_hoare, rule hoare_kcomp, force)
+  by (rule fbox_invI) auto
+
+lemma hoare_invI_break: 
+  "\<^bold>{P\<^bold>} Y \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{I\<^bold>} X \<^bold>{I\<^bold>} \<Longrightarrow> I \<le> Q \<Longrightarrow> \<^bold>{P\<^bold>} Y ; X INV I\<^bold>{Q\<^bold>}"
+  by (rule fbox_invI_break; expr_auto)
+
+lemma fdia_invI_break: 
+  "P \<le> |Y\<rangle> I \<Longrightarrow> I \<le> |X\<rangle> I \<Longrightarrow> I \<le> Q \<Longrightarrow> P \<le> |Y ; X INV I\<rangle> Q"
+  apply(subst fdia_kcomp)
+  apply (rule_tac Q\<^sub>2=I in fdia_conseq, force, expr_auto)
+  by (unfold impl_eq_leq invar_def, rule_tac P\<^sub>2=I in fdia_conseq, force)
+    (auto simp: taut_def)
 
 
 subsection \<open> Conditional statement \<close>
@@ -355,7 +374,7 @@ lemma fbox_kstar_inv: "I \<le> |F] I \<Longrightarrow> I \<le> |F\<^sup>*] I"
   apply(unfold le_fun_def, subgoal_tac "\<forall>x. I x \<longrightarrow> (\<forall>s'. s' \<in> F x \<longrightarrow> I s')")
   using kpower_inv[of I F] by blast simp
 
-lemma kstar_inv_rule: "\<^bold>{I\<^bold>} F \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{I\<^bold>} F\<^sup>* \<^bold>{I\<^bold>}"
+lemma hoare_kstar_inv: "\<^bold>{I\<^bold>} F \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{I\<^bold>} F\<^sup>* \<^bold>{I\<^bold>}"
   by (metis SEXP_def fbox_kstar_inv)
 
 lemma fdia_kstar_inv: "I \<le> |F\<rangle> I \<Longrightarrow> I \<le> |F\<^sup>*\<rangle> I"
@@ -692,7 +711,7 @@ lemma fdia_loopI: "P \<le> I \<Longrightarrow> I \<le> Q \<Longrightarrow> I \<l
 
 lemma hoare_loop_seqI: "\<^bold>{I\<^bold>} F \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{I\<^bold>} G \<^bold>{I\<^bold>} \<Longrightarrow> `P \<longrightarrow> I` \<Longrightarrow> `I \<longrightarrow> Q` 
   \<Longrightarrow> \<^bold>{P\<^bold>} LOOP (F ; G) INV I \<^bold>{Q\<^bold>}"
-  by (rule fbox_loopI, simp_all add: wp refine_iff_implies)
+  by (rule fbox_loopI, simp_all add: wlp refine_iff_implies)
      (metis (full_types) fbox_iso order.trans refine_iff_implies)
 
 lemma fbox_loopI_break: 
@@ -701,7 +720,7 @@ lemma fbox_loopI_break:
   by (rule hoare_loopI, auto simp: SEXP_def taut_def)
 
 lemma hoare_loopI_break: 
-  "\<^bold>{P\<^bold>} Y \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{I\<^bold>} X \<^bold>{I\<^bold>} \<Longrightarrow> `I \<longrightarrow> Q` \<Longrightarrow> \<^bold>{P\<^bold>} (Y ; (LOOP X INV I)) \<^bold>{Q\<^bold>}"
+  "\<^bold>{I\<^bold>} X \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{P\<^bold>} Y \<^bold>{I\<^bold>} \<Longrightarrow> `I \<longrightarrow> Q` \<Longrightarrow> \<^bold>{P\<^bold>} (Y ; (LOOP X INV I)) \<^bold>{Q\<^bold>}"
   by (rule hoare_kcomp, force) (rule hoare_loopI, simp_all)
 
 
@@ -710,11 +729,11 @@ subsection \<open> While loop \<close>
 definition while :: "'a pred \<Rightarrow> ('a \<Rightarrow> 'a set) \<Rightarrow> ('a \<Rightarrow> 'a set)" 
   where [prog_defs]: "while T X \<equiv> (\<questiondown>T? ; X)\<^sup>* ; \<questiondown>\<not>T?"
 
-syntax "_while" :: "logic \<Rightarrow> logic \<Rightarrow> logic \<Rightarrow> logic" ("WHILE _ DO _" [0,63] 64)
+syntax "_while" :: "logic \<Rightarrow> logic \<Rightarrow> logic \<Rightarrow> logic" ("WHILE _ DO _" [0,64] 64)
 translations "WHILE T DO X" == "CONST while (T)\<^sub>e X"
 
 lemma hoare_while:
-  "\<^bold>{I\<^bold>} X \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{I\<^bold>} (WHILE T DO X) \<^bold>{\<not> T \<and> I\<^bold>}"
+  "\<^bold>{I \<and> T\<^bold>} X \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{I\<^bold>} (WHILE T DO X) \<^bold>{\<not> T \<and> I\<^bold>}"
   unfolding while_def 
   apply (simp add: fbox_test fbox_kcomp)
   apply (rule_tac p\<^sub>2=I and q\<^sub>2=I in hoare_conseq)
@@ -725,6 +744,21 @@ lemma hoare_while:
    apply expr_simp
   apply (rule_tac R="(I \<and> T)\<^sup>e" in hoare_kcomp)
   by (auto simp: fbox_test fbox_kcomp)
+
+lemma hoare_whileI: "\<^bold>{I \<and> T\<^bold>} X \<^bold>{I\<^bold>} \<Longrightarrow> `P \<longrightarrow> I` \<Longrightarrow> `I \<and> \<not> T \<longrightarrow> Q`
+  \<Longrightarrow> \<^bold>{P\<^bold>} WHILE T DO X INV I \<^bold>{Q\<^bold>}"
+  by (rule hoare_conseq, subst invar_def)
+    (rule hoare_while, assumption, auto simp: taut_def)
+
+lemma fbox_whileI: "P \<le> I \<Longrightarrow> (I \<and> T)\<^sub>e \<le> |X] I \<Longrightarrow> (I \<and> \<not> T)\<^sub>e \<le> Q 
+  \<Longrightarrow> P \<le> |WHILE T DO X INV I] Q"
+  using hoare_whileI[unfolded fbox_to_hoare[symmetric], of I T X P Q] 
+  by expr_auto
+
+lemma hoare_whileI_break: 
+  "\<^bold>{I \<and> T\<^bold>} X \<^bold>{I\<^bold>} \<Longrightarrow> \<^bold>{P\<^bold>} Y \<^bold>{I\<^bold>} \<Longrightarrow> `I \<and> \<not> T \<longrightarrow> Q` \<Longrightarrow> \<^bold>{P\<^bold>} Y ; WHILE T DO X INV I \<^bold>{Q\<^bold>}"
+  by (rule hoare_kcomp, force)
+    (rule hoare_whileI; expr_auto)
 
 lemma fdia_while_variantI:
   fixes V :: "int \<Rightarrow> 's \<Rightarrow> bool" and T :: "'s \<Rightarrow> bool"
@@ -774,101 +808,101 @@ lemma frame_assign_in:
   using assms
   by (auto simp add: prog_defs expr_defs fun_eq_iff put_scene_override_le)
   
-definition not_modifies :: "'s prog \<Rightarrow> 's scene \<Rightarrow> bool" where
-  "not_modifies P a = (\<forall> s s'. s' \<in> P s \<longrightarrow> s' \<approx>\<^sub>S s on a)" 
+definition not_modifies :: "'s prog \<Rightarrow> ('a, 's) expr \<Rightarrow> bool" where
+  "not_modifies P e = (\<forall> s s'. s' \<in> P s \<longrightarrow> e s' = e s)" 
 
-syntax "_not_modifies" :: "logic \<Rightarrow> salpha \<Rightarrow> logic" (infix "nmods" 30)
-translations "_not_modifies P a" == "CONST not_modifies P a"
+syntax "_not_modifies" :: "logic \<Rightarrow> logic \<Rightarrow> logic" (infix "nmods" 30)
+translations "_not_modifies P e" == "CONST not_modifies P (e)\<^sub>e"
 
 (* FIXME: The following rule is an inefficient way to calculate modification; 
   replace with scene membership laws. *)
 
 lemma nmods_union [closure]:
-  assumes "P nmods A" "P nmods B"
-  shows "P nmods (A \<union> B)"
+  assumes "P nmods e" "P nmods f"
+  shows "P nmods (e, f)"
   using assms
   by (auto simp add: not_modifies_def prog_defs)
-     (metis scene_equiv_def scene_override_union scene_union_incompat scene_union_unit(1))
 
-lemma nmods_skip [closure]: "idem_scene a \<Longrightarrow> skip nmods a"
+lemma nmods_skip [closure]: "skip nmods e"
   by (simp add: not_modifies_def prog_defs scene_equiv_def)
 
 lemma nmods_seq [closure]:
-  assumes "P nmods a" "Q nmods a"
-  shows "(P ; Q) nmods a"
+  assumes "P nmods e" "Q nmods e"
+  shows "(P ; Q) nmods e"
   using assms 
   by (auto simp add: not_modifies_def prog_defs scene_equiv_def)
-    (metis scene_override_overshadow_right)
 
 lemma nmods_if [closure]:
-  assumes "P nmods a" "Q nmods a"
-  shows "IF b THEN P ELSE Q nmods a"
+  assumes "P nmods e" "Q nmods e"
+  shows "IF b THEN P ELSE Q nmods e"
   using assms by (auto simp add: not_modifies_def prog_defs)
 
 lemma nmods_choice [closure]:
-  assumes "P nmods a" "Q nmods a"
-  shows "P \<sqinter> Q nmods a"  
+  assumes "P nmods e" "Q nmods e"
+  shows "P \<sqinter> Q nmods e"  
   using assms by (auto simp add: not_modifies_def prog_defs)
 
 lemma nmods_Choice [closure]:
-  assumes "\<And> i. i \<in> I \<Longrightarrow> P(i) nmods a"
-  shows "(\<Sqinter> i\<in>I. P(i)) nmods a"
+  assumes "\<And> i. i \<in> I \<Longrightarrow> P(i) nmods e"
+  shows "(\<Sqinter> i\<in>I. P(i)) nmods e"
   using assms
   by (auto simp add: Nondet_choice_def not_modifies_def)
 
 lemma nmods_kpower [closure]:
-  assumes "idem_scene a" "P nmods a"
-  shows "(kpower P n) nmods a"
+  assumes "P nmods e"
+  shows "(kpower P n) nmods e"
 proof (induct n)
   case 0
-  then show ?case 
-    by (simp add: kpower_def assms(1) nmods_skip)
+  then show ?case
+    by (metis kpower_0' nmods_skip) 
 next
   case (Suc n)
   then show ?case
-    by (simp add: kpower_Suc nmods_seq assms)
+    by (metis assms kpower_Suc' nmods_seq)
 qed
 
 lemma nmods_star [closure]:
-  assumes "idem_scene a" "P nmods a"
-  shows "P\<^sup>* nmods a"
+  assumes "P nmods e"
+  shows "P\<^sup>* nmods e"
   by (simp add: assms kstar_alt nmods_Choice nmods_kpower)
 
 lemma nmods_loop [closure]:
-  assumes "idem_scene a" "P nmods a"
-  shows "LOOP P INV B nmods a"
+  assumes "P nmods e"
+  shows "LOOP P INV B nmods e"
   by (simp add: assms loopi_def nmods_star)
 
 lemma nmods_test [closure]:
-  "idem_scene a \<Longrightarrow> \<questiondown>b? nmods a"
+  "\<questiondown>b? nmods e"
   by (auto simp add: not_modifies_def prog_defs scene_equiv_def)
 
-lemma nmods_assign [closure]:
-  assumes "vwb_lens x" "idem_scene a" "var_alpha x \<bowtie>\<^sub>S a"
-  shows "x ::= e nmods a"
+lemma nmods_assigns [closure]:
+  assumes "\<sigma> \<dagger> (e)\<^sub>e = (e)\<^sub>e" 
+  shows "\<langle>\<sigma>\<rangle> nmods e"
   using assms
   by (expr_simp add: not_modifies_def assigns_def put_scene_override_indep)
 
+lemma nmods_assign:
+  assumes "(a)\<^sub>e\<lbrakk>e/x\<rbrakk> = (a)\<^sub>e"
+  shows "x ::= e nmods a"
+  by (metis SEXP_def assms nmods_assigns)
+
 lemma nmods_via_fbox:
-  "\<lbrakk> vwb_lens x; \<And> v. |P] ($x = \<guillemotleft>v\<guillemotright>) = ($x = \<guillemotleft>v\<guillemotright>)\<^sub>e \<rbrakk> \<Longrightarrow> P nmods $x"
-  by (expr_simp add: fbox_def not_modifies_def, auto)
-     (metis UNIV_I lens_override_def mwb_lens.weak_get_put vwb_lens_iff_mwb_UNIV_src)
+  "\<lbrakk> vwb_lens x; \<And> v. |P] (e = \<guillemotleft>v\<guillemotright>) = (e = \<guillemotleft>v\<guillemotright>)\<^sub>e \<rbrakk> \<Longrightarrow> P nmods e"
+  by (expr_simp add: fbox_def not_modifies_def)
 
 text \<open> Important principle: If @{term P} does not modify @{term a}, and predicate @{term b} does
   not refers only variables outside of @{term a} then @{term b} is an invariant of @{term P}. \<close>
 
 lemma nmods_frame_law:
-  assumes "S nmods a" "(-a) \<sharp> (I)\<^sub>e" "\<^bold>{P\<^bold>}S\<^bold>{Q\<^bold>}"
+  assumes "S nmods I" "\<^bold>{P\<^bold>}S\<^bold>{Q\<^bold>}"
   shows "\<^bold>{P \<and> I\<^bold>}S\<^bold>{Q \<and> I\<^bold>}"
   using assms
-  by (auto simp add: prog_defs fbox_def expr_defs 
-      scene_override_commute not_modifies_def scene_equiv_def, metis)
+  by (auto simp add: prog_defs fbox_def expr_defs not_modifies_def)
 
 lemma nmods_invariant:
-  assumes "P nmods a" "(-a) \<sharp> (b)\<^sub>e"
+  assumes "P nmods b"
   shows "\<^bold>{b\<^bold>}P\<^bold>{b\<^bold>}"
   using assms
-  by (auto simp add: prog_defs fbox_def expr_defs 
-      scene_override_commute not_modifies_def scene_equiv_def, metis)
+  by (auto simp add: prog_defs fbox_def expr_defs not_modifies_def)
 
 end
