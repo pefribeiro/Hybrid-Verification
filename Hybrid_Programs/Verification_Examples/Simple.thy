@@ -33,7 +33,7 @@ term exp_flow
 lemma local_flow_exp_flow: "local_flow_on exp_f (mx+\<^sub>Lt) UNIV UNIV (exp_flow)"
   apply (auto simp add: local_flow_on_def)?
   apply (unfold_locales, auto)
-    apply (lipschitz "1")
+    apply (lipschitz_const "1")
    apply (vderiv)
   by expr_auto
 

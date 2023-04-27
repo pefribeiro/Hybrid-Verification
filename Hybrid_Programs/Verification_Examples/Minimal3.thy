@@ -34,7 +34,7 @@ abbreviation "mini_wmr_flow \<tau> \<equiv> [
 lemma mini_wmr_flow_exp:
   "local_flow_on mini_evolve ( ve +\<^sub>L po ) UNIV UNIV mini_wmr_flow"
   apply (auto simp add: local_flow_on_def)
-  apply (unfold_locales, auto, lipschitz "1")
+  apply (unfold_locales, auto, lipschitz_const "1")
     defer
     apply vderiv
   apply expr_auto

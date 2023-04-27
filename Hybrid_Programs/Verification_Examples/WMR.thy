@@ -55,7 +55,7 @@ lemma helpful_deriv:
   by (metis assms dual_order.order_iff_strict has_derivative_subset mem_Collect_eq subsetI)
 
 (* FIXME: I believe we need a generalisation of the below to arbitrary function X, where only
-   one component is 0 *)
+   one component's derivative is 0 *)
 lemma deriv_0_same_value:
   fixes X :: "real \<Rightarrow> real"
   assumes "\<forall>x\<ge>0. D X \<mapsto> (\<lambda>x. 0) at x within Collect ((\<le>) 0)"
@@ -92,7 +92,6 @@ proof -
      Err. It just turns out we needed to demonstrate continuity of X. *)
 qed
 
-lit_vars
 
 
 lemma 
@@ -100,8 +99,6 @@ lemma
   shows "{avLW` = \<guillemotleft>k\<guillemotright> | \<guillemotleft>k\<guillemotright> = 0} = {avLW` = 0 | \<guillemotleft>k\<guillemotright> = 0}"
   unfolding g_orbital_on_def
   apply(clarsimp simp add: fun_eq_iff)
-  (*apply (rule_tac x="[avLW \<leadsto> $avLW]" in arg_cong[symmetric])*)
-
   apply (cases "k = 0")
    apply expr_auto
   apply expr_auto
@@ -172,14 +169,14 @@ context wmr
 begin
 
 lemma deriv_0_imp_nmods:
-  shows "{yw` = 0} nmods {yw}" 
+  shows "{yw` = 0} nmods yw" 
   apply (simp add: not_modifies_def scene_equiv_def lens_override_def )
   unfolding g_orbital_on_def
   apply expr_auto
   unfolding g_orbital_def g_orbit_def ivp_sols_def has_vderiv_on_def has_vector_derivative_def
   apply auto (* Doesn't seem provable? It is! *)
   using deriv_0_same_value
-  by (metis vwb_lens.put_eq vwbs(7))
+  by (metis ) 
 
 lemma deriv_0_some_nmods:
   shows "{mx` = 1, yw`= 0} nmods {yw}"
@@ -188,8 +185,20 @@ lemma deriv_0_some_nmods:
   apply expr_auto
   unfolding g_orbital_def g_orbit_def ivp_sols_def has_vderiv_on_def has_vector_derivative_def
   apply auto
-  using deriv_0_same_value 
-  sorry
+  using deriv_0_same_value (* Need generalisation of result because of extra variables? *)
+  oops
+
+  (* Consider application of the following for modular reasoning. *)
+  thm nmods_g_orbital_on_discrete 
+  (* Need frame laws? Rule of constancy? *)
+  thm nmods_frame_law
+  thm nmods_invariant
+
+lemma "(b \<le> |P] b)"
+    (* after having the two systems of ODEs. 
+        ODEs define the frames and the topological space.  *)
+
+  (* Also consider the aspect of nondeterminism that we could have in a controller? *)
 
 lemma
   shows "{mx` = 1} = {mx` = 1, yw`= 0}"
@@ -207,6 +216,7 @@ lemma
     apply (rule_tac x="t" in exI)
     apply (rule_tac x="\<lambda>y. (X t, y)" in exI, auto)
    *)
+  oops
 
 abbreviation 
   "evolve \<equiv> 
@@ -288,29 +298,32 @@ lemma linear_motion:
         \<and> mx = mx\<^sub>i + t*LV * cos(yw) 
         \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
   apply (dInduct_mega)
+  using non_zeros apply simp
+  apply (dInduct_mega)
+  using non_zeros by simp
   (* This nearly works, but then need to incorporate this result into system:
 
       "$avLW = LV / radius \<and> $avRW = LV / radius \<longrightarrow> radius / 2 * cos ($yw) * $avLW + radius / 2 * cos ($yw) * $avRW = cos ($yw) * LV"
       "$avLW = LV / radius \<and> $avRW = LV / radius \<longrightarrow> radius / 2 * sin ($yw) * $avLW + radius / 2 * sin ($yw) * $avRW = sin ($yw) * LV"
 
-    after which, it should be possible to show it holds.
+    together with yw` = 0, it should be possible to show that the property holds?
+
+    Q: Not sure what is the best way to go about doing this.
 
     See below for an equivalent ODE system / property. *)
-  oops
 
 abbreviation 
   "evolve_simp \<equiv> 
   {mx` = cos(yw) * LV,
    my` = sin(yw) * LV,
    t` = 1
-  }" (* Cannot have eq. yw` = 0 in system, otherwise tactic no longer works. *)
+  }" (* Cannot have eq. yw` = 0 in system, otherwise tactic no longer works. But  
+        perhaps with use of nmods could prove it?  *)
 
-lemma linear_motion:
-  shows "\<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) 
-        \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-       (evolve_simp)
-      \<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) 
-        \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+lemma linear_motion':
+  shows "\<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+        evolve_simp
+        \<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
   apply (rule_tac diff_cut_on_split)
    apply (dInduct)
   by (dInduct)
@@ -319,15 +332,18 @@ lemma linear_motion_1:
   "\<^bold>{$mx = mx\<^sub>i + $t * LV * cos ($yw)\<^bold>} evolve_simp \<^bold>{$mx = mx\<^sub>i + $t * LV * cos ($yw)\<^bold>}"
   by (dInduct)
 
+lemma linear_motion_forever:
+  shows "\<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+       evolve_simp\<^sup>*
+      \<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  by (simp add: hoare_kstar_inv linear_motion')
 
-
-
+(* Copied below to introspect proof goal steps *)
 lemma g_ode_frame_prod_sugar:
   "h \<bowtie> t \<Longrightarrow> {h` = \<guillemotleft>k\<guillemotright>, t` = 1 | $t \<le> (H\<^sub>u - h\<^sub>m)/\<guillemotleft>k\<guillemotright>} = {(h, t)` = (\<guillemotleft>k\<guillemotright>, 1) | $t \<le> (H\<^sub>u - h\<^sub>m)/\<guillemotleft>k\<guillemotright>}"
   unfolding g_orbital_on_def apply(clarsimp simp add: fun_eq_iff)
   apply (rule_tac x="[h \<leadsto> \<guillemotleft>k\<guillemotright>, t \<leadsto> 1]" in arg_cong)
-  apply  (expr_simp add: lens_indep.lens_put_comm)
-  oops
+  by  (expr_simp add: lens_indep.lens_put_comm)
 
 lemma eq_evolutions:
   "{avLW` = $LMotorT / lwI, avRW` = $RMotorT / lwI,
@@ -351,10 +367,9 @@ lemma eq_evolutions:
 lemma "{mx` = cos(yw) * LV} = {mx` = cos(yw) * LV, yw`= 0}"
   unfolding g_orbital_on_def
   apply(clarsimp simp add: fun_eq_iff)
-  apply expr_auto
-  sledgehammer
-  apply (rule_tac x="[mx \<leadsto> cos ($yw) * LV, yw \<leadsto> $yw]" in arg_cong)
-  apply (case_tac "(get\<^bsub>LMotorT\<^esub> x) = 0 \<and> (get\<^bsub>RMotorT\<^esub> x) = 0", auto)
+  oops
+  (*apply (rule_tac x="[mx \<leadsto> cos ($yw) * LV, yw \<leadsto> $yw]" in arg_cong)
+  apply (case_tac "(get\<^bsub>LMotorT\<^esub> x) = 0 \<and> (get\<^bsub>RMotorT\<^esub> x) = 0", auto)*)
 
 lemma eq_box_imp:
   assumes "Q = R"
@@ -383,16 +398,12 @@ lemma angular_motion:
     apply (dInduct)
    apply (dInduct)
   apply (hoare_wp_simp)
-  using eq_evolutions eq_box_imp (* Hmmm *)
+  using eq_evolutions eq_box_imp 
+    (* Hmmm: how to push LMotorT = 0 and RMotorT = 0 inside? Maybe this is the wrong approach.*)
  apply (auto simp only: expr_defs  )
   oops
 
-lemma linear_motion_forever:
-  shows "\<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-       (evolve_simp\<^sup>*)
-      \<^bold>{mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  using kstar_inv_rule linear_motion
-  by fastforce
+
 
 (* stepwise attempt below
 
@@ -469,7 +480,7 @@ text \<open> We need to certify the solution. \<close>
 lemma mini_wmr_flow_exp:
   "local_flow_on mini_evolve (yw+\<^sub>LavLW+\<^sub>LavRW+\<^sub>Lt) UNIV UNIV mini_wmr_flow"
   using non_zeros apply (auto simp add: local_flow_on_def)
-  apply (unfold_locales, auto, lipschitz "ratio")
+  apply (unfold_locales, auto, lipschitz_const "ratio")
     defer
   apply vderiv
    apply expr_auto
@@ -490,7 +501,25 @@ proof -
   have "vwb_lens (yw+\<^sub>LavLW+\<^sub>LavRW+\<^sub>Lt)"
     by auto
 
+ (* term mini_evolution
   have
+    "\<^bold>{True\<^bold>} 
+      {avRW` = radius}
+     \<^bold>{avRW \<ge> 0\<^bold>}"
+    
+    apply (wlp_solve "\<lambda>t. [avRW \<leadsto> radius * t + $avRW]")
+       apply auto
+    apply (auto simp add: local_flow_on_def)
+     apply (unfold_locales, auto simp add:local_lipschitz_def)
+(*      apply (local_flow_Lconst)
+    apply (wlp_solve "\<lambda>t. [mx \<leadsto> t + $mx, avRW \<leadsto> R * t + $avRW]")
+    apply (wlp_solve "\<lambda>t. [mx \<leadsto> t + $mx, avLW \<leadsto> R * t + $avLW, avRW \<leadsto> R * t + $avRW]")
+    apply (wlp_solve "\<lambda>t. [mx \<leadsto> t + $mx, yw \<leadsto>
+                                 - 1 * radius * t * (1 / W) * $yw + radius * t * (1 / W) * $avLW + $avRW,
+                                 avLW \<leadsto> R * t + $yw, avRW \<leadsto> R * t + $avLW]")*) (* cannot use t in system *)
+    oops
+*)
+    have
     "\<^bold>{True\<^bold>} 
       mini_evolution
      \<^bold>{avRW \<ge> 0\<^bold>}"
@@ -541,15 +570,15 @@ abbreviation "mini_wmr_flow_2 \<tau> \<equiv> [
 lemma mini_wmr_flow_2_exp [local_flow]:
   assumes "lwI > 0" "rwI > 0" "W > 0" "ratio > 0" "radius > 0"
   shows "local_flow_on (mini_evolve_2) (yw+\<^sub>LavLW+\<^sub>LavRW+\<^sub>Lt) UNIV UNIV (mini_wmr_flow_2)"
-  using assms apply (auto simp add: local_flow_on_def)
-  apply (unfold_locales, auto, lipschitz "ratio")
+  using assms apply (auto simp add: local_flow_on_def) 
+  apply (unfold_locales, auto, lipschitz_const "ratio")
+  defer
+    apply vderiv
+  apply expr_auto
     (* Following step not able to be found by Sledgehammer directly, detailed proof needed to get it. *)
-  using mult_le_cancel_left non_zeros(3) norm_fst_le norm_snd_le norm_Pair2 norm_eq_zero right_diff_distrib' norm_mult real_norm_def
-    apply (smt (verit) mult_le_cancel_left non_zeros(3) norm_fst_le norm_snd_le)
-   apply vderiv
-  by expr_auto
-
-
+  (* using mult_le_cancel_left non_zeros(3) norm_fst_le norm_snd_le norm_Pair2 norm_eq_zero right_diff_distrib' norm_mult real_norm_def 
+    apply (smt (verit) mult_le_cancel_left non_zeros(3) norm_fst_le norm_snd_le) *)
+  oops
 
 proof (unfold_locales, auto, lipschitz "ratio")
   fix a aa ab b t ta ac ad ae ba af ag ah bb::real
@@ -678,7 +707,7 @@ lemma never_turn':
   "\<^bold>{\<guillemotleft>lwI\<guillemotright> = \<guillemotleft>rwI\<guillemotright> \<and> LMotorT = RMotorT \<and> avRW = avLW \<and> yw = \<guillemotleft>Y\<guillemotright>\<^bold>}
     evolve
    \<^bold>{\<guillemotleft>lwI\<guillemotright> = \<guillemotleft>rwI\<guillemotright> \<and> LMotorT = RMotorT \<and> avRW = avLW \<and> yw = \<guillemotleft>Y\<guillemotright>\<^bold>}"
-  by (dInduct_mega) (* Interesting: order of conjunctions matters, a lot! *)
+  by (dInduct_mega) (* order of conjunctions matters, a lot! *)
 
 lemma same_T: 
   "\<^bold>{True\<^bold>}

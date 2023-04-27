@@ -15,7 +15,7 @@ dataspace wmr =
 context wmr
 begin
 
-abbreviation 
+abbreviation (input) 
   "mini_evolution \<equiv> 
   {
   po` = ve,
@@ -23,21 +23,25 @@ abbreviation
   ti` = 1
   }"
 
-abbreviation 
+abbreviation
+  (input)
   "mini_evolve \<equiv> 
   [po \<leadsto> ve,
    ve \<leadsto> 0,
    ti \<leadsto> 1]"
 
-abbreviation "mini_wmr_flow \<tau> \<equiv> [
+
+term mini_evolve
+
+abbreviation (input) "mini_wmr_flow \<tau> \<equiv> [
   po \<leadsto> ve*\<tau> + po,
-  ve \<leadsto> ve,
-  ti \<leadsto> \<tau> + ti]"
+  ti \<leadsto> \<tau> + ti,
+  ve \<leadsto> ve]"
 
 lemma mini_wmr_flow_exp:
   "local_flow_on mini_evolve (po +\<^sub>L ve +\<^sub>L ti) UNIV UNIV mini_wmr_flow"
   apply (auto simp add: local_flow_on_def)
-  apply (unfold_locales, auto, lipschitz "1")
+  apply (unfold_locales, auto, lipschitz_const "1")
     defer
     apply vderiv
   apply expr_auto
@@ -45,6 +49,11 @@ lemma mini_wmr_flow_exp:
 
 lemma res1:"\<^bold>{ve = 1\<^bold>} mini_evolution \<^bold>{ve = 1\<^bold>}"
   by dInduct
+
+thm fbox_solve[OF mini_wmr_flow_exp]
+
+method hoare_wp_auto uses local_flow = (hoare_wp_simp local_flow: local_flow[simplified]; expr_auto)
+
 
 lemma res2:"\<^bold>{ve = 1\<^bold>} mini_evolution \<^bold>{ve \<ge> 0\<^bold>}"
   apply (hoare_wp_auto local_flow: mini_wmr_flow_exp)
