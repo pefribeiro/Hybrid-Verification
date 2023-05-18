@@ -191,8 +191,8 @@ lemma hoare_weaken_pre_conj:
   by (simp add: refine_iff_implies taut_def)
 
 lemma hoare_strengthen_post:
-  assumes "`T \<longrightarrow> R`" "\<^bold>{P\<^bold>} X \<^bold>{R \<and> T\<^bold>}" 
-  shows "\<^bold>{P\<^bold>} X \<^bold>{R\<^bold>}"
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{Q \<and> T \<and> R\<^bold>}"
+  shows "\<^bold>{P\<^bold>} X \<^bold>{Q \<and> R\<^bold>}"
   using assms
   by (simp add: hoare_conj_pos)
   
@@ -202,11 +202,11 @@ lemma hoare_strengthen_pos_universal:
   using assms 
   by (simp add: refine_iff_implies taut_def)
 
-
-lemma
-  shows "\<^bold>{P\<^bold>} skip \<^bold>{Q\<^bold>}"
-  nitpick
-  oops
+lemma hoare_weaken_post:
+  assumes "\<^bold>{P\<^bold>} S \<^bold>{Q \<and> R\<^bold>}"
+  shows "\<^bold>{P\<^bold>} S \<^bold>{R\<^bold>}"
+  using assms
+  by (simp add: hoare_conj_pos)
 
 lemma nmods_while:
   assumes "X nmods e"
@@ -235,17 +235,111 @@ lemma hoare_while_unroll_kcomp:
   using assms WHILE_unroll_IF
   by (metis hoare_kcomp) 
 
-(*
-  by (metis (mono_tags) SEXP_def hoare_kcomp nmods_invariant not_modifies_def)
-  by (metis (mono_tags) hoare_conj_pos hoare_kcomp hoare_while)*)
+lemma hoare_insert_ifthenelse:
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{Q\<^bold>}"
+  shows "X = IF P THEN X ; \<questiondown>Q? ELSE X"
+proof -
+  have "P \<le> |X] Q"
+    using assms by force
+  then have "P \<le> (\<lambda>s. (\<forall>s'. s' \<in> X s \<longrightarrow> Q s'))"
+    by (simp add: fbox_def)
+  then have "\<forall>s. P s \<longrightarrow> (\<forall>s'. s' \<in> X s \<longrightarrow> Q s')"
+    by auto
+  then have "\<forall>s. P s \<longrightarrow> (X ; \<questiondown>Q?) s = X s"
+    unfolding kcomp_def test_def
+    by auto
+  
+  then have "(\<lambda>s. if P s then (X ; \<questiondown>Q?) s else X s) = (\<lambda>s. if P s then X s else X s)"
+    by meson
+  then have "(IF P THEN X ; \<questiondown>Q? ELSE X) = IF P THEN X ELSE X"
+    unfolding ifthenelse_def
+    by auto
+  then show ?thesis
+    unfolding ifthenelse_def
+    by auto
+qed
 
+lemma hoare_insert_post_test:
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{Q\<^bold>}"
+  shows "\<questiondown>P? ; X = \<questiondown>P? ; X ; \<questiondown>Q?"
+proof -
+  have "P \<le> |X] Q"
+    using assms by force
+  then have "P \<le> (\<lambda>s. (\<forall>s'. s' \<in> X s \<longrightarrow> Q s'))"
+    by (simp add: fbox_def)
+  then have "\<forall>s. P s \<longrightarrow> (\<forall>s'. s' \<in> X s \<longrightarrow> Q s')"
+    by auto
+  then have "\<forall>s. P s \<longrightarrow> (X ; \<questiondown>Q?) s = X s"
+    unfolding kcomp_def test_def
+    by auto
+  then have "\<questiondown>P? ; X = \<questiondown>P? ; X ; \<questiondown>Q?"
+    unfolding test_def kcomp_def by auto
+  then show ?thesis .
+qed
 
-(*
-lemma unfold_while:
-  assumes "`P \<longrightarrow> X`" "\<^bold>{P\<^bold>} (\<questiondown>X? ; Y)\<^sup>* ; Z \<^bold>{Q\<^bold>}"
-  shows "\<^bold>{P\<^bold>} Y ; (\<questiondown>X? ; Y)\<^sup>* ; Z \<^bold>{Q\<^bold>}"
-  using assms
-  by (metis (mono_tags, lifting) SEXP_def fbox_def fbox_kcomp predicate1D predicate1I)
-*)
+lemma test_to_choice:
+  "X = \<questiondown>P? ; X \<sqinter> \<questiondown>\<not> P? ; X"
+  unfolding nondet_choice_def test_def kcomp_def by auto
+
+lemma test_nondet_unit:
+  "X = \<questiondown>P? ; X \<sqinter> X"
+  unfolding nondet_choice_def test_def kcomp_def by auto
+
+lemma hoare_insert_test:
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{Q\<^bold>}"
+  shows "X = \<questiondown>P? ; X ; \<questiondown>Q? \<sqinter> X"
+  using assms hoare_insert_post_test
+  by (metis test_nondet_unit)
+
+lemma hoare_ineffective_while:
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{\<not> T\<^bold>}"
+  shows "\<questiondown>P? ; X ; WHILE T DO Y = \<questiondown>P? ; X"
+proof -
+  have "\<questiondown>P? ; X ; WHILE T DO Y = \<questiondown>P? ; X ; \<questiondown>\<not>T? ; WHILE T DO Y"
+    using assms hoare_insert_post_test by metis
+  also have "... = \<questiondown>P? ; X ; \<questiondown>\<not>T?"
+    using negative_test_WHILE_DO_absorb kcomp_assoc by metis
+  also have "... = \<questiondown>P? ; X"
+    using assms hoare_insert_post_test by metis
+  finally show ?thesis .
+qed
+
+lemma hoare_pre_not_while:
+  assumes "`P \<longrightarrow> \<not> T`" "`P \<longrightarrow> Q`"
+  shows "\<^bold>{P\<^bold>} (WHILE T DO X) \<^bold>{Q\<^bold>}"
+proof -
+  have "\<^bold>{P\<^bold>} (WHILE T DO X) \<^bold>{Q\<^bold>} = \<^bold>{P\<^bold>} \<questiondown>\<not> T? \<sqinter> (\<questiondown>T? ; X) ; WHILE T DO X \<^bold>{Q\<^bold>}"
+    by (metis WHILE_unroll)
+
+  have "\<^bold>{P\<^bold>} \<questiondown>\<not> T? \<sqinter> (\<questiondown>T? ; X) ; WHILE T DO X \<^bold>{Q\<^bold>}"
+    apply (rule hoare_choice)
+     apply (metis (mono_tags, lifting) SEXP_def assms(2) fbox_test predicate1I taut_def)
+    by (metis (mono_tags, lifting) SEXP_def assms(1) fbox_kcomp fbox_test predicate1I taut_def)
+  then show ?thesis  
+    by (metis WHILE_unroll)
+qed
+
+lemma hoare_pre_not_while_seq:
+  assumes "`P \<longrightarrow> \<not> T`" "`P \<longrightarrow> Q`" "\<^bold>{Q\<^bold>} Z \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} (WHILE T DO X) ; Z \<^bold>{Q\<^bold>}"
+  by (meson assms(1) assms(2) assms(3) hoare_kcomp hoare_pre_not_while)
+
+lemma 
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{\<not>T\<^bold>}" "X \<noteq> abort"
+  shows "X ; ((IF T THEN X ELSE skip) ; E)\<^sup>* = (X ; WHILE \<not> T DO E)\<^sup>*"
+  oops (* TODO: This does not hold, even if X \<noteq> abort. Let X = x::=e,
+          then the lhs always establishes this, whereas the rhs also has
+          the possibility for skip!
+
+          NB X cannot be abort as kstar satisfies the following law. *)
+
+lemma kstar_abort_eq: "(abort)\<^sup>* = skip \<sqinter> abort"
+  by (simp add: kstar_abort nondet_choice_abort_unit)
+
+lemma "P ; abort = abort"
+  by (auto simp add:kcomp_def abort_def)
+
+lemma "abort ; P = abort"
+  by (auto simp add:kcomp_def abort_def)
 
 end

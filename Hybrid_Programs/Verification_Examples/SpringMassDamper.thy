@@ -153,7 +153,7 @@ abbreviation "evolve_flow \<equiv> [x \<leadsto> v, v \<leadsto> - (\<omega>^2) 
 
 abbreviation "flow \<tau> \<equiv> [x \<leadsto> C\<^sub>1*exp (L1*\<tau>) + C\<^sub>2*exp (L2*\<tau>), v \<leadsto> C\<^sub>1*L1*exp (L1*\<tau>) + C\<^sub>2*L2*exp (L2*\<tau>)]"
 
-lemma flow_exp:
+(*lemma flow_exp:
   "local_flow_on evolve_flow (x+\<^sub>Lv) UNIV UNIV flow"
   apply (auto simp add: local_flow_on_def)
   apply (unfold_locales, auto)
@@ -165,6 +165,7 @@ lemma flow_exp:
     (* apply (force intro!: vderiv_intros)
     apply (simp: vec_eq_iff field_simps) *)
   oops
+*)
 
 end
 

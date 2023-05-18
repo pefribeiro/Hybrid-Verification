@@ -3,6 +3,7 @@ theory WMR1
 imports 
   "Hybrid-Verification.Hybrid_Verification"
   "Hoare_Help"
+  "RoboSim"
 begin
 
 lit_vars
@@ -20,7 +21,7 @@ datatype STATE =
   Initial | SMoving | DMoving | Waiting | STurning | DTurning | 
   DMovingJunction | DTurningJunction
 
-dataspace wmr_state = 
+dataspace wmr_state = robosim +
   constants
     \<comment> \<open> Robot d-model \<close>
     LV     :: real
@@ -30,8 +31,8 @@ dataspace wmr_state =
     mass   :: real
     WIDTH  :: real
     LENGTH :: real
-    Cycle :: nat
-    TimeScale :: real
+    (*Cycle :: nat*)
+    (*TimeScale :: real*)
     \<comment> \<open> Arena \<close>
     size :: "real^3"
     \<comment> \<open> Scenario: wheel inertias \<close>
@@ -42,12 +43,12 @@ dataspace wmr_state =
   variables
     \<comment> \<open> State machine variables and inputs/outputs \<close>
     state     :: STATE
-    executing :: bool
+    (*executing :: bool*)
     obstacle  :: bool
     MBC       :: nat
     \<comment> \<open> Timer \<close>
-    timer     :: real
-    t         :: real (* global time *)
+   (* timer     :: real*)
+   (* t         :: real (* global time *) *)
     \<comment> \<open> P-model: torques and sensor input \<close>
     IRVoltage :: real
     IRDistance:: real
@@ -163,7 +164,7 @@ abbreviation "Stop \<equiv> avLW ::= 0 ; avRW ::= 0"
   IF startexec \<and> endexec THEN endexec ::= False ; P ELSE skip"*)
 
 abbreviation "exec P \<equiv> 
-  IF executing THEN executing ::= False ELSE (executing ::= True ; P)"
+  IF executing THEN MBC ::= MBC + Cycle ; executing ::= False ELSE (executing ::= True ; P)"
 
 text \<open> The state machine is defined below in a style that lends itself to being executed N 
        times till it reaches an exec. This helps with writing of the state machine. \<close>
@@ -410,6 +411,7 @@ method nmods_auto =
 
 (* Q: Is there a better way to define a constant that has IRVoltage, IRDistance, etc? *)
 
+(*
 lemma SendToSoftware_nmods_IRVoltage [nmods]:
   "SendToSoftware nmods {IRVoltage,avLW,avRW,mx,yx,yw,t}"
   unfolding SendToSoftware_def
@@ -427,6 +429,7 @@ lemma Ctrl_nmods [nmods]:
 lemma IF_Ctrl_Skip:
   "(IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) nmods {IRVoltage,mx,yx,yw,t}"
   by nmods_auto
+*)
 
 lemma Ctrl_IF:
   "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}
@@ -453,9 +456,9 @@ proof -
      Ctrl
      \<^bold>{(state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing) \<and> IRVoltage < 3\<^bold>}"
     apply (rule_tac nmods_frame_law')
-    apply nmods_auto
-    by (smt (verit, del_insts) nmods_set SEXP_def fbox_def le_bool_def le_fun_def not_modifies_def)
-    (* FIXME: Introduce Hoare law for this *)
+    apply (simp)
+     apply nmods_auto
+    by presburger
   then have 
     "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}
      Ctrl
@@ -575,6 +578,8 @@ lemma Init_yw_mx_my_Ctrl_Voltage:
   using Init_yw_mx_my_Ctrl
   by presburger
 
+text \<open> Main property \<close>
+
 theorem System0_behaviour:
   "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
     System0
@@ -584,6 +589,173 @@ theorem System0_behaviour:
     \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw))\<^sup>e"])
   using Init_yw_mx_my_Ctrl_Voltage apply blast
   using Ctrl_IF_PSEvolution_iter' by blast
+
+theorem System0_behaviour_tpd:
+  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+    (executing ::= True ; obstacle ::= False ; state ::= Initial ; Ctrl) ; ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*
+   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  unfolding  Init_def
+  thm hoare_floyd_kcomp
+  apply (simp only:kcomp_assoc)?
+  apply (rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)+
+  apply (rule cycle_loop)
+  unfolding Ctrl_def SendToSoftware_def
+    apply ((simp only:kcomp_assoc)?, rule hoare_ifte_kcomp)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)+
+     defer (* Need to eliminate case with assumptions of locale. *)
+     (*apply (rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)*)
+     apply (subst WHILE_unroll_IF[symmetric])
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)+
+     apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+     (*apply (simp add:SimSMovement_def)*)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)+
+     
+    (* Need to use precondition? Not clear how to exploit invariant here through loop unrolling. *)
+     apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+     (*
+     apply (rule hoare_if_kcomp, simp)
+  apply (rule hoare_else_kcomp, simp)
+     apply (rule hoare_if_kcomp, simp)*)
+    apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)+
+     (*
+apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)*)
+     apply (subst WHILE_unroll_IF[symmetric])
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+     
+     (*apply ((simp only:kcomp_assoc)?, rule hoare_if_kcomp, simp)
+     apply (rule hoare_else_kcomp, simp)
+     apply (rule hoare_else_kcomp, simp)
+     apply (rule hoare_if_kcomp, simp)
+
+     apply (rule hoare_if_kcomp, simp)*)
+  apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply (rule hoare_pre_not_while_seq, simp, simp)
+     apply (hoare_wp_simp)
+    apply ((simp only:kcomp_assoc)?, rule hoare_else_kcomp, hoare_wp_simp)
+    apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+    (*apply (simp add:SimSMovement_def)*)
+    apply (rule hoare_else_kcomp, simp)
+    apply (rule hoare_else_kcomp, simp)
+
+    apply ((rule hoare_else_kcomp, simp, simp) | (rule hoare_if_kcomp, simp))
+    apply (rule hoare_ifte_kcomp)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply (rule hoare_pre_not_while_seq, simp, simp)
+     apply (hoare_wp_simp)
+      apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     
+     apply (subst WHILE_unroll_IF[symmetric])
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+    apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+    apply (subst WHILE_unroll_IF[symmetric])
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+    apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)+
+    apply (rule hoare_pre_not_while_seq, simp, simp)
+    apply hoare_wp_simp
+   apply (dInduct_mega)
+    apply (rule nmods_invariant)
+    apply (clarify intro!:closure, subst_eval)
+
+   apply (dInduct_mega)
+  using non_zeros(3) apply blast
+  apply (dInduct_mega)
+ using non_zeros(3) apply blast
+  apply (simp add:SimSMovement_def)
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+    apply (subst WHILE_unroll_IF[symmetric])
+  apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)+
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+  apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)+
+    apply (subst WHILE_unroll_IF[symmetric])
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+  apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)+
+  apply (rule hoare_pre_not_while_seq, expr_simp, expr_simp)
+  apply (metis IRDistance_no_detect_iff eq_IRVoltage_IRDistance linorder_not_less no_obstacle zero_less_numeral)
+  apply (rule nmods_invariant)
+  by (nmods_auto)
+ 
+
+lemma "`$yw = yw\<^sub>0 \<and>
+     $mx = mx\<^sub>i + $t * LV * cos ($yw) \<and>
+     $my = my\<^sub>i + $t * LV * sin ($yw) \<and>
+     (\<exists>v. v) \<and> Ex Not \<and> 3 \<le> $IRVoltage \<and> $obstacle \<and> $avLW = LV / RADIUS \<and> $avRW = LV / RADIUS \<and> $state = DMoving \<and> $MBC = Cycle \<and> \<not> $executing \<longrightarrow>
+     $IRVoltage < 3 \<and>
+     $state = DMoving \<and> $avLW = LV / RADIUS \<and> $avRW = LV / RADIUS \<and> $yw = yw\<^sub>0 \<and> $mx = mx\<^sub>i + $t * LV * cos ($yw) \<and> $my = my\<^sub>i + $t * LV * sin ($yw)`"
+  apply expr_simp
+  apply (subst WHILE_unroll_IF[symmetric])
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))+
+  oops
+
+lemma "All Not \<or> (\<forall>x. x)"
+  
+  apply auto
+  nitpick
+  apply (rule hoare_pre_not_while_seq)
+   apply simp
+  apply simp
+    
+    apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+         
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))
+    apply ((simp only:kcomp_assoc)?, ((rule hoare_else_kcomp, force) | (rule hoare_if_kcomp, force)))
+    
+    apply (rule hoare_if_kcomp, simp)
+     apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+      apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+   
+  
+  apply (rule H_assign_floyd_hoare)
+apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp)
+  
+  apply (simp add: var_alpha_combine wlp)
+  apply (rule hoare_ifte_kcomp)
+    apply (simp only:kcomp_assoc, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     apply (simp only:kcomp_assoc, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+     
+    apply (simp add:SimSMovement_def, (simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+      
+     apply (simp add:SimSMovement_def)
+     apply (rule hoare_ifte_kcomp)
+     apply (simp only:kcomp_assoc, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+      apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest del:SimSMovement_def)
+      apply (subst WHILE_unroll_IF[symmetric])
+  apply ((simp only:kcomp_assoc)?, rule hoare_ifte_kcomp)
+      apply (rule hoare_ifte_kcomp)
+    apply (rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)
+  apply (rule WHILE_unroll_IF)
+  apply (hoare_wp_auto)
+  
+  apply (rule hoare_if_then_else)
+  apply (simp only:kcomp_assoc)
+    apply (rule hoare_floyd_kcomp)
+  apply (hoare_wp_simp)
+  apply (rule hoare_floyd_kcomp, simp add:usubst_eval)
+  
+  apply (rule hoare_floyd_kcomp, simp add:usubst_eval)
+
+
+  apply (rule hoare_floyd_kcomp[where P="($yw = yw\<^sub>0 \<and> $mx = mx\<^sub>i + $t * LV * cos ($yw) \<and> $my = my\<^sub>i + $t * LV * sin ($yw))\<^sup>e" and x="executing" and e="(True)\<^sup>e"])
+  apply (rule ini_cycle_loop)
+     apply (hoare_wp_auto)
+    defer
+  defer
+    apply (dInduct_mega)
+     apply (rule nmods_invariant)
+  apply auto[1]
+     apply (intro closure)
+  apply (subst_eval)
+    apply (dInduct_mega)
+  using non_zeros(3) apply blast
+    apply (dInduct_mega)
+  using non_zeros(3) apply blast
+   apply (rule hoare_strengthen_pos_universal)
+  using IRDistance_no_detect_iff eq_IRVoltage_IRDistance no_obstacle apply simp
+
 
 lemma "\<^bold>{P\<^bold>} SendToSoftware \<^bold>{P \<and> \<not>obstacle\<^bold>}"
   apply (hoare_wp_auto)
@@ -605,5 +777,21 @@ lemma unfold_while:
 subsection \<open> Version with torque, no instantaneous change in velocity. \<close>
 
 end
+
+text \<open> If you do have obstacles, then what should the property
+       we're after look like? \<close>
+
+text \<open> If it's a path we're talking about, then it is fairly simple,
+       where (yw0,mx0,my0) is the initial configuration and 
+       (ywF,mxF,myF) is the final configuration. 
+
+       The key would be to be take a list of 'obstacles', which could
+       be navigation waypoints anyway, and  \<close>
+
+theorem 
+  "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}
+   System
+   \<^bold>{ yw = yw\<^sub>f \<and> mx = mx\<^sub>f \<and> my = my\<^sub>f \<^bold>}"
+  oops
 
 end

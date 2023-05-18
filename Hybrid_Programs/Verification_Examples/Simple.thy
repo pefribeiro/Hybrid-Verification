@@ -1,7 +1,6 @@
 theory Simple
   imports 
   "Hybrid-Verification.Hybrid_Verification"
-  "Z_Toolkit.Trace_Algebra"
 begin
 
 lit_vars
