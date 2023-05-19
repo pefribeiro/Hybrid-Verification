@@ -436,7 +436,6 @@ text \<open> First attempt at a system level prover \<close>
 
 method dProve = (rule_tac hoare_loop_seqI, hoare_wp_auto, dInduct_mega', (expr_auto)+)
 
-
 subsection \<open> Weakest liberal preconditions \<close>
 
 (* most used solution theorems in arch2022:
