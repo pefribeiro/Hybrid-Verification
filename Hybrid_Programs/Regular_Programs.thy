@@ -1218,4 +1218,31 @@ lemma nmods_frame_law':
   using assms
   by (auto simp add: prog_defs fbox_def expr_defs not_modifies_def)
 
+lemma nmods_set:
+  assumes "v \<in> s" "P nmods \<guillemotleft>s\<guillemotright>"
+  shows "P nmods \<guillemotleft>v\<guillemotright>"
+  using assms unfolding not_modifies_def by auto
+
+lemma nmods_subset':
+  assumes "v \<subseteq> s" "P nmods \<guillemotleft>s\<guillemotright>"
+  shows "P nmods \<guillemotleft>v\<guillemotright>"
+  using assms unfolding not_modifies_def by auto
+
+method nmods_auto = 
+  (auto intro: nmods_set nmods_subset)?;
+  ( 
+      (
+        (rule nmods_assign ; expr_simp)
+      | (rule nmods_if) 
+      | (rule nmods_while)
+      | (rule nmods_seq) 
+      | (rule nmods_assign) 
+      | (rule nmods_skip)
+      | (rule nmods_choice)
+      | (rule nmods_test)
+      | (rule nmods_star)
+      | (rule nmods_invariant ; (auto intro!: nmods_set nmods_subset nmods_subset')?)
+    )
+  )+
+
 end
