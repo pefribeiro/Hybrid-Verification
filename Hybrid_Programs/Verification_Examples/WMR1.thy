@@ -381,6 +381,17 @@ abbreviation
    t` = 1
   }"
 
+abbreviation (input) "startup \<epsilon> a \<sigma> B \<equiv> g_dl_ode_frame a \<sigma> (@B \<and> t < \<epsilon>)\<^sub>e"
+
+term "startup 0.1 (yw +\<^sub>L t) [yw \<leadsto> 1, t \<leadsto> 1] (True)\<^sup>e"
+
+term g_dl_ode_frame
+
+
+term "g_dl_ode_frame (yw +\<^sub>L t) [yw \<leadsto> 1, t \<leadsto> 1] (t \<le> \<epsilon>)\<^sub>e"
+
+ML \<open> @{term "{yw` = 1, t` = 1}"}\<close>
+
 abbreviation "System0 \<equiv> Init ; Ctrl ; ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*"
 
 text \<open> In the first case, we show that if no obstacles => only linear behaviour relevant. \<close>
@@ -525,7 +536,7 @@ theorem System0_behaviour:
         where R="(IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing
     \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw))\<^sup>e"])
   using Init_yw_mx_my_Ctrl_Voltage apply blast
-  using Ctrl_IF_PSEvolution_iter' by blast
+  using Ctrl_IF_PSEvolution_iter' by blast    
 
 (* Note below can only cope if have the additional conjunct in the 
    postcondition. Not ideal. *)
