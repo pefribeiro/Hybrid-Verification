@@ -378,7 +378,7 @@ abbreviation
    mx` = (RADIUS/2 * cos(yw) * avLW)+(RADIUS/2 * cos(yw) * avRW),
    my` = (RADIUS/2 * sin(yw) * avLW)+(RADIUS/2 * sin(yw) * avRW),
    timer` = 1,
-   t` = 1
+   t` = 1 | timer \<le> TimeScale*Cycle
   }"
 
 abbreviation (input) "startup \<epsilon> a \<sigma> B \<equiv> g_dl_ode_frame a \<sigma> (@B \<and> t < \<epsilon>)\<^sub>e"
@@ -545,6 +545,18 @@ theorem System0_behaviour_tpd:
   "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
     System0
    \<^bold>{state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  unfolding Init_def
+  apply (hoare_cycle)
+    apply (metis IRDistance_no_detect_iff eq_IRVoltage_IRDistance linorder_not_less no_obstacle zero_less_numeral)
+  using non_zeros by blast+
+
+theorem System0_behaviour_full_tpd:
+  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+    System0
+   \<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  apply (rule hoare_stengthen_post[
+        where Q="(state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing
+    \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw))\<^sup>e"], simp)
   unfolding Init_def
   apply (hoare_cycle)
     apply (metis IRDistance_no_detect_iff eq_IRVoltage_IRDistance linorder_not_less no_obstacle zero_less_numeral)

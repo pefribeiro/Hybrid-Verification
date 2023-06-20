@@ -5,7 +5,7 @@ imports
 begin
 
 lemma hoare_stengthen_post:
-  assumes "\<^bold>{P\<^bold>} G \<^bold>{Q\<^bold>}" and "`Q \<longrightarrow> R`"
+  assumes "`Q \<longrightarrow> R`" and "\<^bold>{P\<^bold>} G \<^bold>{Q\<^bold>}"
   shows "\<^bold>{P\<^bold>} G \<^bold>{R\<^bold>}"
   using assms Diff_Dyn_Logic.strengthen by blast
 

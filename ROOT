@@ -30,14 +30,15 @@ session "Hybrid-Verification" in "Hybrid_Programs" = "Matrix_ODE_Verify" +
 (*  document_files
     "root.tex" *)
 
-(*session "Verification_Examples" = "Hybrid-Verification" +
+session "Verification_Examples" in "Hybrid_Programs/Verification_Examples" = "Hybrid-Verification" +
   options [quick_and_dirty, document = pdf, document_output = "output"]
-  directories
-    Hybrid_Programs/Verification_Examples
-    Legacy
+(*  directories
+    Hybrid_Programs/Verification_Examples*)
+(*    Legacy*)
   theories
-    "Hybrid_Programs/Verification_Examples/ARCH2022_Examples"
-    "Legacy/MTX_Examples"
+      WMR1
+(*    "Hybrid_Programs/Verification_Examples/ARCH2022_Examples"
+    "Legacy/MTX_Examples"*)
   document_files
-    "root.tex"*)
+     "root.tex"
 
