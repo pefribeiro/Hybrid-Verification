@@ -195,5 +195,10 @@ lemma fdia_invI:
   unfolding invar_def
   by (rule fdia_inv[OF assms])
 
+lemma hoare_weaken_pre_conj:
+  assumes "`Q \<longrightarrow> P`" "\<^bold>{P\<^bold>} X \<^bold>{R\<^bold>}" 
+  shows "\<^bold>{Q\<^bold>} X \<^bold>{R\<^bold>}"
+  using assms
+  by (simp add: refine_iff_implies taut_def)
 
 end

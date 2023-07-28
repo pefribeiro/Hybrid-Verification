@@ -30,12 +30,6 @@ lemma
   oops
 
 
-lemma hoare_weaken_pre_conj:
-  assumes "`Q \<longrightarrow> P`" "\<^bold>{P \<and> Q\<^bold>} X \<^bold>{R\<^bold>}" 
-  shows "\<^bold>{Q\<^bold>} X \<^bold>{R\<^bold>}"
-  using assms
-  by (simp add: refine_iff_implies taut_def)
-
 lemma hoare_strengthen_post:
   assumes "\<^bold>{P\<^bold>} X \<^bold>{Q \<and> T \<and> R\<^bold>}"
   shows "\<^bold>{P\<^bold>} X \<^bold>{Q \<and> R\<^bold>}"
@@ -54,6 +48,17 @@ lemma hoare_weaken_post:
   using assms
   by (simp add: hoare_conj_pos)
 
+lemma hoare_assoc_post:
+  assumes "\<^bold>{P\<^bold>} S \<^bold>{(Q \<and> R) \<and> T\<^bold>}"
+  shows "\<^bold>{P\<^bold>} S \<^bold>{Q \<and> (R \<and> T)\<^bold>}"
+  using assms
+  by (simp add: hoare_conj_pos)
+
+lemma hoare_assoc_pre:
+  assumes "\<^bold>{(P \<and> Q) \<and> R\<^bold>} S \<^bold>{T\<^bold>}"
+  shows "\<^bold>{P \<and> (Q \<and> R)\<^bold>} S \<^bold>{T\<^bold>}"
+  using assms
+  by (simp add: hoare_conj_pos)
 
 
 lemma 

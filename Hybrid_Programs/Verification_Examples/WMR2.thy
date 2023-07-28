@@ -1,12 +1,16 @@
-theory WMR1
+theory WMR2
 
 imports 
   "Hybrid-Verification.Hybrid_Verification"
   "Hoare_Help"
-  "RoboSim"
 begin
 
 lit_vars
+
+syntax "_do_while" :: "logic \<Rightarrow> logic \<Rightarrow> logic" ("DO _ WHILE _" [0,64] 64)
+translations "DO X WHILE T" => "X ; CONST while (T)\<^sub>e X"
+
+term "DO skip WHILE True"
 
 section \<open> Dataspace definition. \<close>
 
@@ -16,9 +20,8 @@ datatype STATE =
   Initial | SMoving | DMoving | Waiting | STurning | DTurning | 
   DMovingJunction | DTurningJunction
 
-dataspace wmr_state = robosim +
+dataspace wmr_state = 
   constants
-    \<epsilon>\<^sub>s     :: real
     \<comment> \<open> Robot d-model \<close>
     LV     :: real
     AV     :: real
@@ -27,18 +30,28 @@ dataspace wmr_state = robosim +
     mass   :: real
     WIDTH  :: real
     LENGTH :: real
+    Cycle :: nat
+    TimeScale :: real
+    \<comment> \<open> Scenario: wheel inertias \<close>
+    lwI :: real
+    rwI :: real
   assumes
-    non_zeros: "RADIUS > 0" "WIDTH > 0" "LENGTH > 0" "\<epsilon>\<^sub>s > 0" "\<epsilon>\<^sub>s < 1"
+    non_zeros: "lwI > 0" "rwI > 0" "RADIUS > 0" "WIDTH > 0" "LENGTH > 0"
   variables
     \<comment> \<open> State machine variables and inputs/outputs \<close>
     state     :: STATE
+    executing :: bool
     obstacle  :: bool
     MBC       :: nat
+    \<comment> \<open> Timer \<close>
+    timer     :: real
+    t         :: real (* global time *)
     \<comment> \<open> P-model: torques and sensor input \<close>
     IRVoltage :: real
     IRDistance:: real
-    \<comment> \<open> Scenario mapping \<close>
-    \<comment> \<open> Scenario: robot yaw (yw) \<close>
+    LMotorT   :: real
+    RMotorT   :: real
+    \<comment> \<open> Scenario: robot position (px,py) and yaw (yw) \<close>
     yw :: "real"
     \<comment> \<open> Scenario: middle point between wheels (mx,my) \<close>
     mx :: "real"
@@ -160,8 +173,6 @@ definition[simp]: "SimSMovement \<equiv>
   IF state = DTurningJunction \<and> MBC < pi/AV THEN state ::= DTurning ELSE
   IF state = DTurningJunction \<and> MBC \<ge> pi/AV THEN state ::= SMoving ELSE skip" 
 
-text \<open> Checks that SimSMovement behaves as expected. \<close>
-
 lemma simS1: "\<^bold>{state = Initial \<and> executing\<^bold>} SimSMovement \<^bold>{state = SMoving \<and> executing\<^bold>}"
   by (hoare_wp_simp)
 
@@ -177,8 +188,81 @@ lemma simS1''': "\<^bold>{state = Initial \<and> executing\<^bold>} SimSMovement
 (*lemma simS2: "\<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>} SimSMovement \<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>}"
   by hoare_wp_auto
 
+text \<open> Checks that SimSMovement behaves as expected. \<close>
+
 lemma simS3: "\<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>} SimSMovement\<^sup>* \<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>}"
   using hoare_kstar_inv simS2 by blast*)
+
+lemma simS4: "\<^bold>{True\<^bold>} (timer ::= y) \<^bold>{timer = y\<^bold>}"
+  by hoare_wp_auto
+
+lemma strengthen_pre:
+  assumes "\<^bold>{True\<^bold>} F \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{Q\<^bold>} F \<^bold>{Q\<^bold>}"
+  using assms by auto
+
+text \<open> Therefore, we could have the following software controller. \<close>
+
+definition[simp]: "Init \<equiv> executing ::= True ; obstacle ::= False ; state ::= Initial"
+definition[simp]: "SendToSoftware \<equiv> IF IRVoltage \<ge> 3.0 THEN obstacle ::= True ELSE obstacle ::= False"
+definition[simp]: "Ctrl \<equiv> SendToSoftware ; DO SimSMovement WHILE executing ; timer ::= 0"
+
+section \<open> Platform and scenario modelling \<close>
+
+subsection \<open> Version 0: no torque, assumes instantaneous change in velocity and no obstacles. \<close>
+
+abbreviation 
+  "PSEvolution \<equiv> 
+  {yw` = (RADIUS/axisLength * avRW)-(RADIUS/axisLength * avLW),
+   mx` = (RADIUS/2 * cos(yw) * avLW)+(RADIUS/2 * cos(yw) * avRW),
+   my` = (RADIUS/2 * sin(yw) * avLW)+(RADIUS/2 * sin(yw) * avRW),
+   timer` = 1,
+   t` = 1
+  }"
+
+abbreviation "System0 \<equiv> Init ; Ctrl ; ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*"
+
+text \<open> In the first case, we show that if no obstacles => only linear behaviour relevant. \<close>
+
+lemma PSE_no_yaw_change: "\<^bold>{avRW = avLW \<and> yw = yw\<^sub>0\<^bold>} PSEvolution \<^bold>{avRW = avLW \<and> yw = yw\<^sub>0\<^bold>}"
+  by (dInduct_mega)
+
+lemma PSE_linear_motion:
+  "\<^bold>{avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+    PSEvolution
+   \<^bold>{avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  apply (dInduct_mega)
+  using non_zeros(3) apply blast
+  apply (dInduct_mega)
+  using non_zeros(3) by blast
+
+text \<open> Below the angular version. Note that AV is clockwise, ie. a positive velocity spins clockwise,
+       whereas yaw is measured anti-clockwise, so a positive velocity decreases the angle. \<close>
+
+lemma PSE_angular_motion:
+  "\<^bold>{avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and> yw = yw\<^sub>0 - timer*AV \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i\<^bold>}
+    PSEvolution
+   \<^bold>{avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and> yw = yw\<^sub>0 - timer*AV \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i\<^bold>}"
+  apply (dInduct_mega)
+  using non_zeros apply force+
+  by (dInduct_mega)
+
+end
+
+context wmr_no_obstacle
+begin
+
+text \<open> What we really want to prove: overall, system moves linearly. \<close>
+
+lemma
+  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + timer*LV * cos(yw) \<and> my = my\<^sub>i + timer*LV * sin(yw)\<^bold>}
+    System0
+   \<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + timer*LV * cos(yw) \<and> my = my\<^sub>i + timer*LV * sin(yw)\<^bold>}"
+  oops
+
+lemma SendToSoftware_spec:
+  "\<^bold>{IRVoltage < 3\<^bold>} SendToSoftware \<^bold>{ \<not> obstacle \<^bold>}"
+  by (hoare_wp_auto)
 
 lemma SimSMovement_DMoving_no_exe_obstacle_spec:
   "\<^bold>{state = DMoving \<and> \<not> executing \<and> \<not> obstacle\<^bold>}
@@ -203,6 +287,10 @@ lemma SimSMovement_obs_executing':
     SimSMovement
    \<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>}"
   by hoare_wp_auto
+
+(* What I really need to show *)
+
+(* Take the following two *)
 
 lemma SimSMovement_DMoving_IF_executing:
   "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> \<not> executing\<^bold>} 
@@ -259,18 +347,8 @@ lemma SimSMovement_obs_not_executing_from_DMoving:
    \<^bold>{\<not> obstacle \<and> state \<noteq> STurning \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>}"
   by hoare_wp_auto
 
-lemma simS4: "\<^bold>{True\<^bold>} (timer ::= y) \<^bold>{timer = y\<^bold>}"
-  by hoare_wp_auto
-
-text \<open> Therefore, we could have the following software controller. \<close>
-
-definition[simp]: "Init \<equiv> executing ::= True ; obstacle ::= False ; state ::= Initial ; avLW ::= 0; avRW ::=0 ; timer ::= 0"
-definition[simp]: "SendToSoftware \<equiv> IF IRVoltage \<ge> 3.0 THEN obstacle ::= True ELSE obstacle ::= False"
-definition[simp]: "Ctrl \<equiv> SendToSoftware ; DO SimSMovement WHILE executing ; timer ::= 0"
-
-lemma SendToSoftware_spec:
-  "\<^bold>{IRVoltage < 3\<^bold>} SendToSoftware \<^bold>{ \<not> obstacle \<^bold>}"
-  by (hoare_wp_auto)
+thm hoare_kcomp_inv_rhs
+thm hoare_kcomp
 
 lemma Ctrl_DMoving_inv:
   "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}
@@ -282,6 +360,68 @@ lemma Ctrl_DMoving_inv:
     apply (hoare_wp_simp, simp del:SendToSoftware_def SimSMovement_def)
   using SimSMovement_obs_executing_need apply metis 
   by hoare_wp_simp
+
+named_theorems nmods
+
+
+
+thm nmods_seq
+thm nmods_while
+
+lemma nmods_set:
+  assumes "v \<in> s" "P nmods s"
+  shows "P nmods v"
+  using assms unfolding not_modifies_def by auto
+
+lemma nmods_set_expr:
+  assumes "v \<in> s" "P nmods s"
+  shows "P nmods F e"
+  using assms unfolding not_modifies_def by auto
+
+lemma nmods_subset:
+  assumes "v \<subseteq> s" "P nmods s"
+  shows "P nmods v"
+  using assms unfolding not_modifies_def by auto
+
+method nmods_auto = 
+  (auto intro: nmods_set nmods_subset)?;
+  ( 
+      (
+        (rule nmods_assign ; expr_simp)
+      | (rule nmods_if) 
+      | (rule nmods_while)
+      | (rule nmods_seq) 
+      | (rule nmods_assign) 
+      | (rule nmods_skip)
+      | (rule nmods_choice)
+      | (rule nmods_test)
+      | (rule nmods_star)
+      | (rule nmods_invariant ; (auto intro!: nmods_set nmods_subset nmods_subset)?)
+      | (simp only:nmods)
+    )
+  )+
+
+(* Q: Is there a better way to define a constant that has IRVoltage, IRDistance, etc? *)
+
+(*
+lemma SendToSoftware_nmods_IRVoltage [nmods]:
+  "SendToSoftware nmods {IRVoltage,avLW,avRW,mx,yx,yw,t}"
+  unfolding SendToSoftware_def
+  by nmods_auto
+
+lemma SimSMovement_nmods_IRVoltage [nmods]: 
+  "SimSMovement nmods {IRVoltage,mx,yx,yw,t}"
+  unfolding SimSMovement_def 
+  by nmods_auto
+
+lemma Ctrl_nmods [nmods]: 
+  "Ctrl nmods {IRVoltage,mx,yx,yw,t}"
+  unfolding Ctrl_def by nmods_auto
+
+lemma IF_Ctrl_Skip:
+  "(IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) nmods {IRVoltage,mx,yx,yw,t}"
+  by nmods_auto
+*)
 
 lemma Ctrl_IF:
   "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}
@@ -320,7 +460,7 @@ proof -
     "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}
      (IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip)
      \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}"
-    apply (rule hoare_if_then_else')
+    apply (rule hoare_if_then_else)
     by (rule hoare_skip)
   then show ?thesis .
   (* Not sure whether this is sufficiently strong as an invariant *)
@@ -341,6 +481,47 @@ proof -
   then show ?thesis
     by presburger
 qed
+
+lemma PSEvolution_nmods [nmods]:
+  "PSEvolution nmods {state}"
+  by (auto intro!:closure, subst_eval)
+
+lemma PSE_linear_motion':
+  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+    PSEvolution
+   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  apply (dInduct_mega)
+   apply (rule nmods_invariant) 
+   defer
+   apply (dInduct_mega)
+   apply (rule nmods_invariant) 
+    defer
+   apply (dInduct_mega)
+  using non_zeros(3) apply blast
+   apply (dInduct_mega)
+  using non_zeros(3) apply blast
+  by (auto intro!:closure, subst_eval, subst_eval)
+
+lemma Ctrl_IF_PSEvolution:
+  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+   (IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution
+   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  using Ctrl_IF' PSE_linear_motion' hoare_kcomp
+  by blast
+
+lemma Ctrl_IF_PSEvolution_iter:
+  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+   ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*
+   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  using Ctrl_IF_PSEvolution hoare_kstar_inv by blast
+
+lemma Ctrl_IF_PSEvolution_iter':
+  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
+   ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*
+   \<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
+  apply (rule hoare_weaken_post[where Q="(IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing)\<^sup>e"])
+  using Ctrl_IF_PSEvolution_iter 
+  by simp
 
 lemma SimSMovement_Initial_to_DMoving:
   "\<^bold>{executing \<and> state = Initial\<^bold>} 
@@ -369,163 +550,6 @@ lemma Init_Ctrl:
   apply hoare_wp_simp
   using SimSMovement_Initial_to_DMoving by blast
 
-section \<open> Platform and scenario modelling \<close>
-
-subsection \<open> Version 0: no torque, assumes instantaneous change in velocity and no obstacles. \<close>
-
-abbreviation "PSEqs \<equiv> 
-  [yw \<leadsto> (RADIUS/axisLength * avRW)-(RADIUS/axisLength * avLW),
-   mx \<leadsto> (RADIUS/2 * cos(yw) * avLW)+(RADIUS/2 * cos(yw) * avRW),
-   my \<leadsto> (RADIUS/2 * sin(yw) * avLW)+(RADIUS/2 * sin(yw) * avRW),
-   timer \<leadsto> 1,
-   t \<leadsto> 1]"
-
-abbreviation 
-  "PSEvolution \<equiv> 
-  {yw` = (RADIUS/axisLength * avRW)-(RADIUS/axisLength * avLW),
-   mx` = (RADIUS/2 * cos(yw) * avLW)+(RADIUS/2 * cos(yw) * avRW),
-   my` = (RADIUS/2 * sin(yw) * avLW)+(RADIUS/2 * sin(yw) * avRW),
-   timer` = 1,
-   t` = 1 | timer \<le> TimeScale*Cycle
-  }"
-
-abbreviation (input) "startup \<epsilon> a \<sigma> B \<equiv> g_dl_ode_frame a \<sigma> (@B \<and> timer \<le> \<epsilon>)\<^sub>e"
-
-term "startup 0.1 (yw +\<^sub>L t) [yw \<leadsto> 1, t \<leadsto> 1] (True)\<^sup>e"
-
-term g_dl_ode_frame
-
-term "g_dl_ode_frame (yw +\<^sub>L t) [yw \<leadsto> 1, t \<leadsto> 1] (t \<le> \<epsilon>)\<^sub>e"
-
-ML \<open> @{term "{yw` = 1, t` = 1}"}\<close>
-
-abbreviation "CInit \<equiv> startup \<epsilon>\<^sub>s (yw +\<^sub>L t +\<^sub>L mx +\<^sub>L my +\<^sub>L timer) PSEqs (True)\<^sup>e"
-
-abbreviation "System0 \<equiv> Init ; CInit ; Ctrl ; ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*"
-
-abbreviation "System1 \<equiv> Init ; CInit ; (Ctrl ; PSEvolution)\<^sup>+"
-
-(* Q1: Should we have (Ctrl ; PSEvolution)\<^sup>* or a version with one or more finite iterations? 
-       What is the consequence of this?
-
-       Or should we simply have Ctrl ; (PSEvolution ; Ctrl)\<^sup>* ?
-
-   Q2: Relative time in evolution: do we always need to reset a timer or is there a better
-       modelling alternative?
-*)
-
-text \<open> In the first case, we show that if no obstacles => only linear behaviour relevant. \<close>
-
-lemma PSE_no_yaw_change: "\<^bold>{avRW = avLW \<and> yw = yw\<^sub>0\<^bold>} PSEvolution \<^bold>{avRW = avLW \<and> yw = yw\<^sub>0\<^bold>}"
-  by (dInduct_mega)
-
-lemma PSE_linear_motion:
-  "\<^bold>{avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-    PSEvolution
-   \<^bold>{avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  apply (dInduct_mega)
-  using non_zeros apply blast
-  apply (dInduct_mega)
-  using non_zeros by blast
-
-text \<open> Below the angular version. Note that AV is clockwise, ie. a positive velocity spins clockwise,
-       whereas yaw is measured anti-clockwise, so a positive velocity decreases the angle. \<close>
-
-lemma PSE_angular_motion:
-  "\<^bold>{avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and> yw = yw\<^sub>0 - timer*AV \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i\<^bold>}
-    PSEvolution
-   \<^bold>{avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and> yw = yw\<^sub>0 - timer*AV \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i\<^bold>}"
-  apply (dInduct_mega)
-  using non_zeros apply force+
-  by (dInduct_mega)
-
-end
-
-context wmr_no_obstacle
-begin
-
-text \<open> What we really want to prove: overall, system moves linearly. \<close>
-
-lemma
-  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + timer*LV * cos(yw) \<and> my = my\<^sub>i + timer*LV * sin(yw)\<^bold>}
-    System0
-   \<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + timer*LV * cos(yw) \<and> my = my\<^sub>i + timer*LV * sin(yw)\<^bold>}"
-  oops
-
-
-
-(* What I really need to show *)
-
-(* Take the following two *)
-
-
-thm hoare_kcomp_inv_rhs
-thm hoare_kcomp
-
-
-(* Q: Is there a better way to define a constant that has IRVoltage, IRDistance, etc? *)
-
-(*
-lemma SendToSoftware_nmods_IRVoltage [nmods]:
-  "SendToSoftware nmods {IRVoltage,avLW,avRW,mx,yx,yw,t}"
-  unfolding SendToSoftware_def
-  by nmods_auto
-
-lemma SimSMovement_nmods_IRVoltage [nmods]: 
-  "SimSMovement nmods {IRVoltage,mx,yx,yw,t}"
-  unfolding SimSMovement_def 
-  by nmods_auto
-
-lemma Ctrl_nmods [nmods]: 
-  "Ctrl nmods {IRVoltage,mx,yx,yw,t}"
-  unfolding Ctrl_def by nmods_auto
-
-lemma IF_Ctrl_Skip:
-  "(IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) nmods {IRVoltage,mx,yx,yw,t}"
-  by nmods_auto
-*)
-
-lemma PSEvolution_nmods:
-  "PSEvolution nmods {state}"
-  by (auto intro!:closure, subst_eval)
-
-lemma PSE_linear_motion':
-  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-    PSEvolution
-   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  apply (dInduct_mega)
-   apply (rule nmods_invariant) 
-   defer
-   apply (dInduct_mega)
-   apply (rule nmods_invariant) 
-    defer
-   apply (dInduct_mega)
-  using non_zeros apply blast
-   apply (dInduct_mega)
-  using non_zeros apply blast
-  by (auto intro!:closure, subst_eval, subst_eval)
-
-lemma Ctrl_IF_PSEvolution:
-  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-   (IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution
-   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  using Ctrl_IF' PSE_linear_motion' hoare_kcomp
-  by blast
-
-lemma Ctrl_IF_PSEvolution_iter:
-  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-   ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*
-   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  using Ctrl_IF_PSEvolution hoare_kstar_inv by blast
-
-lemma Ctrl_IF_PSEvolution_iter':
-  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-   ((IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) ; PSEvolution)\<^sup>*
-   \<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  apply (rule hoare_weaken_post[where Q="(IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing)\<^sup>e"])
-  using Ctrl_IF_PSEvolution_iter 
-  by simp
-
 lemma Init_yw_mx_my_Ctrl:
   "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
    Init ; Ctrl
@@ -546,30 +570,6 @@ lemma Init_yw_mx_my_Ctrl_Voltage:
   using Init_yw_mx_my_Ctrl
   by presburger
 
-lemma Init_yw_mx_my_InitCycle:
-  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (t-\<epsilon>\<^sub>s)*LV * cos(yw) \<and> my = my\<^sub>i + (if t \<le> \<epsilon>\<^sub>s then 0 else t-\<epsilon>\<^sub>s)*LV * sin(yw)\<^bold>}
-   Init ; InitCycle
-   \<^bold>{avRW = 0 \<and> avLW = 0 \<and> yw = yw\<^sub>0 \<and>  mx = mx\<^sub>i + (if t \<le> \<epsilon>\<^sub>s then 0 else t-\<epsilon>\<^sub>s)*LV * cos(yw) \<and> my = my\<^sub>i + (if t \<le> \<epsilon>\<^sub>s then 0 else t-\<epsilon>\<^sub>s)*LV * sin(yw)\<^bold>}"
-  apply (rule hoare_kcomp[where R="(avRW = 0 \<and> avLW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (if t \<le> \<epsilon>\<^sub>s then 0 else t-\<epsilon>\<^sub>s)*LV * cos(yw) \<and> my = my\<^sub>i + (if t \<le> \<epsilon>\<^sub>s then 0 else t-\<epsilon>\<^sub>s)*LV * sin(yw))\<^sup>e"])
-  unfolding Init_def apply (hoare_wp_simp)
-  apply (dInduct_mega)
-   apply (rule hoare_weaken_pre_conj[where P="(True)\<^sup>e"], expr_simp)
-  apply (rule nmods_frame_law[where 
-        I="(yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (if t < \<epsilon>\<^sub>s then 0 else t-\<epsilon>\<^sub>s)*LV * cos(yw) 
-                     \<and> my = my\<^sub>i + (if t < \<epsilon>\<^sub>s then 0 else t-\<epsilon>\<^sub>s)*LV * sin(yw))\<^sup>e"])
-   apply (nmods_auto)
-  using Init_Ctrl by blast*)
-
-lemma Init_yw_mx_my_InitCycle_Voltage:
-  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-   Init ; InitCycle ; Ctrl
-   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing
-    \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  apply (rule hoare_strengthen_pos_universal)
-  using IRDistance_no_detect_iff eq_IRVoltage_IRDistance no_obstacle apply simp
-  using Init_yw_mx_my_Ctrl
-  by presburger
-
 text \<open> Main property \<close>
 
 theorem System0_behaviour:
@@ -580,31 +580,7 @@ theorem System0_behaviour:
         where R="(IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing
     \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw))\<^sup>e"])
   using Init_yw_mx_my_Ctrl_Voltage apply blast
-  using Ctrl_IF_PSEvolution_iter' by blast    
-
-(* Note below can only cope if have the additional conjunct in the 
-   postcondition. Not ideal. *)
-
-theorem System0_behaviour_tpd:
-  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-    System0
-   \<^bold>{state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  unfolding Init_def
-  apply (hoare_cycle)
-    apply (metis IRDistance_no_detect_iff eq_IRVoltage_IRDistance linorder_not_less no_obstacle zero_less_numeral)
-  using non_zeros by blast+
-
-theorem System0_behaviour_full_tpd:
-  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-    System0
-   \<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  apply (rule hoare_stengthen_post[
-        where Q="(state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing
-    \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw))\<^sup>e"], simp)
-  unfolding Init_def
-  apply (hoare_cycle)
-    apply (metis IRDistance_no_detect_iff eq_IRVoltage_IRDistance linorder_not_less no_obstacle zero_less_numeral)
-  using non_zeros by blast+
+  using Ctrl_IF_PSEvolution_iter' by blast
 
 lemma "\<^bold>{P\<^bold>} SendToSoftware \<^bold>{P \<and> \<not>obstacle\<^bold>}"
   apply (hoare_wp_auto)
@@ -617,14 +593,12 @@ lemma SimSMovement_maintain_linear_motion:
    \<^bold>{\<not> obstacle \<and> avLW = avRW\<^bold>}"
   by (hoare_wp_simp)
 
-(*
 lemma unfold_while:
   assumes "`P \<longrightarrow> X`" "\<^bold>{P\<^bold>} (\<questiondown>X? ; Y)\<^sup>* ; Z \<^bold>{Q\<^bold>}"
   shows "\<^bold>{P\<^bold>} Y ; (\<questiondown>X? ; Y)\<^sup>* ; Z \<^bold>{Q\<^bold>}"
   using assms 
   by (metis (mono_tags, lifting) SEXP_def fbox_def fbox_kcomp predicate1D predicate1I)
-*)
-
+  
 subsection \<open> Version with torque, no instantaneous change in velocity. \<close>
 
 end

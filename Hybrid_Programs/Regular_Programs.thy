@@ -10,7 +10,7 @@ theory Regular_Programs
 begin
 
 no_notation Transitive_Closure.rtrancl ("(_\<^sup>*)" [1000] 999)
-
+no_notation Transitive_Closure.trancl ("(_\<^sup>+)" [1000] 999)
 
 subsection \<open> Skip \<close>
 
@@ -78,6 +78,7 @@ syntax
 
 translations
   "_assign x e" == "\<langle>CONST subst_upd [\<leadsto>] x (e)\<^sub>e\<rangle>" (* "\<langle>[x \<leadsto>\<^sub>s e]\<rangle>" *)
+
 
 lemma fbox_assign: "|x ::= e] Q = (Q\<lbrakk>e/x\<rbrakk>)\<^sub>e"
   by (simp add: assigns_def subst_app_def fbox_def fun_eq_iff)
@@ -858,6 +859,16 @@ lemma "(\<questiondown>\<not> T? ; X)\<^sup>* = skip \<sqinter> \<questiondown>\
 lemma kstar_abort_eq: "(abort)\<^sup>* = skip \<sqinter> abort"
   by (simp add: kstar_abort nondet_choice_abort_unit)
 
+subsection \<open> Finite iteration of at least one \<close>
+
+syntax "_kstar_one" :: "logic \<Rightarrow> logic" ("(_\<^sup>+)" [1000] 999)
+translations "X\<^sup>+" => "X ; CONST kstar X"
+
+term "skip\<^sup>+"
+
+lemma "P\<^sup>+ = P ; P\<^sup>*"
+  by auto
+
 subsection \<open> Loops with annotated invariants \<close>
 
 definition loopi :: "('a \<Rightarrow> 'a set) \<Rightarrow> 'a pred \<Rightarrow> ('a \<Rightarrow> 'a set)" 
@@ -1189,6 +1200,12 @@ lemma nmods_frame_law:
   assumes "S nmods I" "\<^bold>{P\<^bold>}S\<^bold>{Q\<^bold>}"
   shows "\<^bold>{P \<and> I\<^bold>}S\<^bold>{Q \<and> I\<^bold>}"
   using assms
+  by (auto simp add: prog_defs fbox_def expr_defs not_modifies_def)
+
+lemma nmods_frame_law':
+  assumes "S nmods I" "\<^bold>{P\<^bold>}S\<^bold>{Q\<^bold>}"
+  shows "\<^bold>{I \<and> P\<^bold>}S\<^bold>{I \<and> Q\<^bold>}"
+  using assms 
   by (auto simp add: prog_defs fbox_def expr_defs not_modifies_def)
 
 lemma nmods_invariant:
