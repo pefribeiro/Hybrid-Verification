@@ -861,13 +861,13 @@ lemma kstar_abort_eq: "(abort)\<^sup>* = skip \<sqinter> abort"
 
 subsection \<open> Finite iteration of at least one \<close>
 
-syntax "_kstar_one" :: "logic \<Rightarrow> logic" ("(_\<^sup>+)" [1000] 999)
-translations "X\<^sup>+" => "X ; CONST kstar X"
+definition kstar_one :: "('a \<Rightarrow> 'a set) \<Rightarrow> ('a \<Rightarrow> 'a set)" ("(_\<^sup>+)" [1000] 999)
+  where [prog_defs]: "(f\<^sup>+) s = (f ; (f\<^sup>*)) s"
 
 term "skip\<^sup>+"
 
 lemma "P\<^sup>+ = P ; P\<^sup>*"
-  by auto
+  unfolding kstar_one_def by auto
 
 subsection \<open> Loops with annotated invariants \<close>
 
@@ -1202,7 +1202,7 @@ lemma nmods_frame_law:
   using assms
   by (auto simp add: prog_defs fbox_def expr_defs not_modifies_def)
 
-lemma nmods_frame_law':
+lemma nmods_frame_law'':
   assumes "S nmods I" "\<^bold>{P\<^bold>}S\<^bold>{Q\<^bold>}"
   shows "\<^bold>{I \<and> P\<^bold>}S\<^bold>{I \<and> Q\<^bold>}"
   using assms 

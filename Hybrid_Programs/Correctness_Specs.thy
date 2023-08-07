@@ -110,6 +110,10 @@ lemma hoare_conj_pos:
   "(\<^bold>{@P\<^bold>} X \<^bold>{@Q1 \<and> @Q2\<^bold>}) = (\<^bold>{@P\<^bold>} X \<^bold>{@Q1\<^bold>} \<and> \<^bold>{@P\<^bold>} X \<^bold>{@Q2\<^bold>})"
   by (auto simp: fbox_def)
 
+lemma hoare_conj_pos': 
+  "\<^bold>{@P\<^bold>} X \<^bold>{@Q1\<^bold>} \<Longrightarrow> \<^bold>{@P\<^bold>} X \<^bold>{@Q2\<^bold>} \<Longrightarrow> (\<^bold>{@P\<^bold>} X \<^bold>{@Q1 \<and> @Q2\<^bold>})"
+  by (auto simp: fbox_def)
+
 lemma hoare_disj_preI:
   "\<^bold>{@a \<and> @b\<^bold>}X\<^bold>{@Q\<^bold>} \<Longrightarrow> \<^bold>{@a \<and> @c\<^bold>}X\<^bold>{@Q\<^bold>} \<Longrightarrow> P = (@a \<and> (@b \<or> @c))\<^sub>e \<Longrightarrow> \<^bold>{@P\<^bold>}X\<^bold>{@Q\<^bold>}"
   by (auto simp: le_fun_def fbox_def)
@@ -200,5 +204,9 @@ lemma hoare_weaken_pre_conj:
   shows "\<^bold>{Q\<^bold>} X \<^bold>{R\<^bold>}"
   using assms
   by (simp add: refine_iff_implies taut_def)
+
+lemma hoare_false:
+  shows "\<^bold>{False\<^bold>} X \<^bold>{R\<^bold>}"
+  by auto
 
 end
