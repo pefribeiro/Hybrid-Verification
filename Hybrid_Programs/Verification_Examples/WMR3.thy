@@ -6,7 +6,7 @@ imports
   "RoboSim"
 begin
 
-
+lit_vars
 
 section \<open> Dataspace definition. \<close>
 
@@ -15,10 +15,9 @@ text \<open> Version of the model where we do not consider torque. \<close>
 datatype STATE = 
   Initial | SMoving | DMoving | Waiting | STurning | DTurning | 
   DMovingJunction | DTurningJunction
-
+                        
 dataspace wmr_state = robosim +
   constants
-    \<epsilon>\<^sub>s     :: real
     \<comment> \<open> Robot d-model \<close>
     LV     :: real
     AV     :: real
@@ -34,7 +33,7 @@ dataspace wmr_state = robosim +
     state     :: STATE
     obstacle  :: bool
     MBC       :: nat
-    \<comment> \<open> P-model: torques and sensor input \<close>
+    \<comment> \<open> P-model: sensor input/output \<close>
     IRVoltage :: real
     IRDistance:: real
     \<comment> \<open> Scenario mapping \<close>
@@ -59,14 +58,9 @@ dataspace wmr_no_obstacle = wmr +
 context wmr
 begin
 
-(* TimerEvo :: "('st \<Rightarrow> real) \<Rightarrow> ('a \<Longrightarrow> 'st) \<Rightarrow> ('st \<Rightarrow> 'st) \<Rightarrow> ('st \<Rightarrow> bool) \<Rightarrow> 'st \<Rightarrow> 'st set" *)
+section \<open> Platform mapping \<close>
 
-end
-
-lit_vars
-
-context wmr
-begin
+abbreviation "axisLength \<equiv> WIDTH+2*(RADIUS/4+0.5)"
 
 lemma 
   fixes IRD :: real
@@ -112,12 +106,11 @@ lemma IRDistance_no_detect_iff:
   assumes"K>0"
   shows "IRD > - ln(K/4)/0.028784 \<longleftrightarrow> 4*exp(-0.028784*IRD) < K"
   using IRDistance_no_detect IRDistance_no_detect_imp assms by blast
-  
-abbreviation "axisLength \<equiv> WIDTH+2*(RADIUS/4+0.5)"
 
 lemma avLW_avRW_dsl_dsr:
   assumes "RADIUS > 0" "WIDTH > 0" "lv = RADIUS*(dsl+dsr)/2" "av = RADIUS*(dsl-dsr)/axisLength"
-  shows "dsl = (2*lv+av*axisLength)/(2*RADIUS)" "dsr = (2*lv-av*axisLength)/(2*RADIUS)"
+  shows "dsl = (2*lv+av*axisLength)/(2*RADIUS)" 
+        "dsr = (2*lv-av*axisLength)/(2*RADIUS)"
 proof - 
   obtain K1 K2 where K1_def:"K1 = 2*lv/RADIUS" and K2_def:"K2 = av*axisLength/RADIUS" by auto
   from assms(1,3) K1_def have K1_eq:"K1 = dsl+dsr"
@@ -147,9 +140,7 @@ text \<open> Platform operation mappings \<close>
 abbreviation "Move lv av \<equiv> avLW ::= (2*lv+av*axisLength)/(2*RADIUS) ; avRW ::= (2*lv-av*axisLength)/(2*RADIUS)"
 abbreviation "Stop \<equiv> avLW ::= 0 ; avRW ::= 0"
 
-(*abbreviation "exec P \<equiv> 
-  IF startexec \<and> \<not> endexec THEN endexec ::= True ; startexec ::= False ELSE
-  IF startexec \<and> endexec THEN endexec ::= False ; P ELSE skip"*)
+section \<open> Software \<close>
 
 abbreviation "exec P \<equiv> 
   IF executing THEN MBC ::= MBC + Cycle ; executing ::= False ELSE (executing ::= True ; P)"
@@ -169,6 +160,8 @@ definition[simp]: "SimSMovement \<equiv>
   IF state = DTurningJunction \<and> MBC < pi/AV THEN state ::= DTurning ELSE
   IF state = DTurningJunction \<and> MBC \<ge> pi/AV THEN state ::= SMoving ELSE skip" 
 
+subsection \<open> SimSMovement behaviour  \<close>
+
 text \<open> Checks that SimSMovement behaves as expected. \<close>
 
 lemma simS1: "\<^bold>{state = Initial \<and> executing\<^bold>} SimSMovement \<^bold>{state = SMoving \<and> executing\<^bold>}"
@@ -182,12 +175,6 @@ lemma simS1'': "\<^bold>{state = DMoving \<and> executing\<^bold>} SimSMovement 
 
 lemma simS1''': "\<^bold>{state = Initial \<and> executing\<^bold>} SimSMovement ; SimSMovement ; SimSMovement \<^bold>{state = DMoving \<and> \<not> executing\<^bold>}"
   by (hoare_wp_auto)
-
-(*lemma simS2: "\<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>} SimSMovement \<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>}"
-  by hoare_wp_auto
-
-lemma simS3: "\<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>} SimSMovement\<^sup>* \<^bold>{state = DMoving \<and> \<not> startexec \<and> endexec\<^bold>}"
-  using hoare_kstar_inv simS2 by blast*)
 
 lemma SimSMovement_DMoving_no_exe_obstacle_spec:
   "\<^bold>{state = DMoving \<and> \<not> executing \<and> \<not> obstacle\<^bold>}
@@ -260,7 +247,7 @@ proof -
       by (smt (verit, ccfv_threshold) SEXP_def decomp fbox_def hoare_kcomp le_fun_def)
   (* This is not an invariant of WHILE _ DO _, but of DO _ WHILE _.
      Proving it relies on being able to unroll the WHILE. *)
-  qed
+qed
 
 lemma SimSMovement_obs_not_executing_from_DMoving:
   "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> \<not> executing\<^bold>} 
@@ -271,9 +258,12 @@ lemma SimSMovement_obs_not_executing_from_DMoving:
 lemma simS4: "\<^bold>{True\<^bold>} (timer ::= y) \<^bold>{timer = y\<^bold>}"
   by hoare_wp_auto
 
-text \<open> Therefore, we could have the following software controller. \<close>
+subsection \<open> Software mapping \<close>
 
-definition[simp]: "Reset \<equiv> timer ::= 0"
+text \<open> Below we define how the d and p-model are mapped. \<close>
+
+text \<open> Discrete initialisation of the system. \<close>
+
 definition[simp]: "DInit \<equiv> wait ::= False ; executing ::= True ; state ::= Initial"
 definition[simp]: "SendToSoftware \<equiv> IF IRVoltage \<ge> 3.0 THEN obstacle ::= True ELSE obstacle ::= False"
 definition "Ctrl \<equiv> SendToSoftware ; DO SimSMovement WHILE executing"
@@ -303,102 +293,39 @@ lemma SimSMovement_Initial_to_DMoving:
   apply (rule hoare_while)
   by (hoare_wp_simp)
 
-(*
-lemma Init_Ctrl:
-  "\<^bold>{True\<^bold>}
-   DInit ; Ctrl
-   \<^bold>{state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}"
-  apply (rule hoare_kcomp[where R="(executing \<and> state = Initial)\<^sup>e"])
-   apply hoare_wp_simp
-  (*using IRDistance_no_detect_iff eq_IRVoltage_IRDistance no_obstacle apply simp*)
-  unfolding Ctrl_def
-  apply (rule hoare_kcomp[where R="(\<not> executing \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS)\<^sup>e"])
-  defer
-   apply hoare_wp_simp
-  apply (rule hoare_kcomp[where R="(executing \<and> state = Initial)\<^sup>e"])
-  apply hoare_wp_simp
-  using SimSMovement_Initial_to_DMoving by blast
-*)
+section \<open> Scenario modelling \<close>
 
-section \<open> Platform and scenario modelling \<close>
-
-subsection \<open> Version 0: no torque, assumes instantaneous change in velocity and no obstacles. \<close>
+subsection \<open> Version 0: no torque, assumes instantaneous change in velocity. \<close>
 
 abbreviation "PSEqs \<equiv> 
   [yw \<leadsto> (RADIUS/axisLength * avRW)-(RADIUS/axisLength * avLW),
    mx \<leadsto> (RADIUS/2 * cos(yw) * avLW)+(RADIUS/2 * cos(yw) * avRW),
    my \<leadsto> (RADIUS/2 * sin(yw) * avLW)+(RADIUS/2 * sin(yw) * avRW)]"
 
-find_theorems "g_orbital_on"
+(* IRDistance = d(mx,my)*)
 
-term "PSEqs" (* Is it possible to extend/compose PSEqs? *)
+(* Evolution on variables timer and t is specified in RoboSim.thy *)
+
+text \<open> Variables used in ODEs. \<close>
 
 abbreviation (input) "PSEqsVars \<equiv> yw +\<^sub>L mx +\<^sub>L my"
 
-abbreviation 
-  "PSEvolution \<equiv> 
-  {yw` = (RADIUS/axisLength * avRW)-(RADIUS/axisLength * avLW),
-   mx` = (RADIUS/2 * cos(yw) * avLW)+(RADIUS/2 * cos(yw) * avRW),
-   my` = (RADIUS/2 * sin(yw) * avLW)+(RADIUS/2 * sin(yw) * avRW),
-   timer` = 1,
-   t` = 1 | timer \<le> TimeScale*Cycle
-  }"
+text \<open> Initialisation of continuous variables. \<close>
 
-definition 
-  "Evo \<epsilon> \<equiv> 
-  {yw` = (RADIUS/axisLength * avRW)-(RADIUS/axisLength * avLW),
-   mx` = (RADIUS/2 * cos(yw) * avLW)+(RADIUS/2 * cos(yw) * avRW),
-   my` = (RADIUS/2 * sin(yw) * avLW)+(RADIUS/2 * sin(yw) * avRW),
-   timer` = 1,
-   t` = 1 | timer \<le> \<epsilon>
-  }"
+abbreviation "CInit \<equiv> avLW ::= 0; avRW ::=0"
 
-abbreviation (input) "startup \<epsilon> a \<sigma> B \<equiv> g_dl_ode_frame a \<sigma> (@B \<and> timer \<le> \<epsilon>)\<^sub>e"
+text \<open> Initialisation of both. \<close>
 
-term "startup 0.1 (yw +\<^sub>L t) [yw \<leadsto> 1, t \<leadsto> 1] (True)\<^sup>e"
+definition[simp]: "Init \<equiv> DInit ; CInit"
+abbreviation "Step \<delta> \<equiv> EvolveUntil \<delta> PSEqsVars PSEqs"
+abbreviation "System \<equiv> Init ; Step \<epsilon>\<^sub>s ; (T(Ctrl) ; Step (TimeScale*Cycle))\<^sup>+"
 
-term g_dl_ode_frame
+ (*startup \<epsilon>\<^sub>s (yw +\<^sub>L t +\<^sub>L mx +\<^sub>L my +\<^sub>L timer) PSEqs (True)\<^sup>e"*)
 
-term "g_dl_ode_frame (yw +\<^sub>L t) [yw \<leadsto> 1, t \<leadsto> 1] (t \<le> \<epsilon>)\<^sub>e"
-
-ML \<open> @{term "{yw` = 1, t` = 1}"}\<close>
-
-abbreviation "CInit \<equiv> avLW ::= 0; avRW ::=0" (*startup \<epsilon>\<^sub>s (yw +\<^sub>L t +\<^sub>L mx +\<^sub>L my +\<^sub>L timer) PSEqs (True)\<^sup>e"*)
-
-lemma "(timer ::= 0 ; startup \<epsilon>\<^sub>s timer [timer \<leadsto> 1] (True)\<^sup>e) = (timer ::= 0 ; (\<Sqinter> i \<in> {v. 0 \<le> v \<and> v \<le> \<epsilon>\<^sub>s}. {timer` = 1 | timer \<le> i}))"
-  apply auto
+lemma "(timer ::= 0 ; g_dl_ode_frame timer [timer \<leadsto> 1] (timer \<le> \<epsilon>\<^sub>s)\<^sub>e) = (timer ::= 0 ; (\<Sqinter> i \<in> {v. 0 \<le> v \<and> v \<le> \<epsilon>\<^sub>s}. {timer` = 1 | timer \<le> i}))"
   apply (simp add:Nondet_choice_def fbox_def fun_eq_iff assigns_def kcomp_def expr_defs, auto)
   apply (meson non_zeros(4) order.order_iff_strict)
   by (smt (verit, ccfv_threshold) g_orbital_on_eq mem_Collect_eq subsetD subsetI)
-
-definition[simp]: "Init \<equiv> DInit ; CInit"
-
-abbreviation "Step \<delta> \<equiv> TimerEvo \<delta> PSEqsVars PSEqs (True)\<^sup>e ; IF timer \<ge> \<delta> THEN Ctrl ; Reset ELSE skip"
-abbreviation "System1 \<equiv> Init ; Step \<epsilon>\<^sub>s ; (Step (TimeScale*Cycle))\<^sup>*"
-
-(* With this formulation evolutions of Step \<epsilon>\<^sub>s that
-   have not yet reached timer \<ge> \<epsilon>\<^sub>s are sequentially composed with
-   Step (TimeScale * Cycle). 
-
-   This would be ok if we considered all possible non-deterministic 
-   evolutions at the beginning within [0,\<epsilon>\<^sub>s]. Otherwise the behaviour
-   above is not quite as expected. *)
-
-lemma Evo_at_rest:
-  "\<^bold>{ avLW = 0 \<and> avRW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>} 
-     Evo \<delta>
-   \<^bold>{ avLW = 0 \<and> avRW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}"
-  unfolding Evo_def by (dInduct_mega)
-
-lemma Evo_timer_delta:
-  "\<^bold>{ P \<^bold>} Evo \<delta> \<^bold>{ P \<and> timer \<le> \<delta> \<^bold>}"
-  unfolding Evo_def apply (hoare_wp_auto)
-  by (smt (verit, del_insts) SEXP_def fbox_g_orbital_on)
-
-lemma 
- "\<^bold>{ True \<^bold>} Evo \<delta> ; \<questiondown>timer \<ge> \<delta>? \<^bold>{ timer = \<delta> \<^bold>}"
-  unfolding Evo_def  apply (hoare_wp_auto)
-  by (smt (verit, del_insts) SEXP_def fbox_g_orbital_on)
 
 lemma "\<^bold>{P\<^bold>} \<questiondown>\<not>P? \<^bold>{False\<^bold>}"
   by hoare_wp_auto
@@ -409,21 +336,6 @@ lemma "timer ::= 0 ; {timer` = 1 | timer \<le> \<delta>} = timer ::= 0 ; (\<Sqin
 
 lemma "\<questiondown>P? = IF P THEN skip ELSE abort"
   by (metis if_then_else_eq kcomp_skip(1) nondet_choice_abort_unit test_nondet_unit)
-
-(* An alternative formulation is the following, but in this way we do not have the 
-   continuous evolution on the RHS, eg. for postcondition. *)
-abbreviation "Step1 \<delta> \<equiv> timer ::= 0 ; Evo \<delta> ; \<questiondown>timer \<ge> \<delta>?"
-abbreviation "System2 \<equiv> Init ; Step1 \<epsilon>\<^sub>s ; (Ctrl ; Step1 (TimeScale*Cycle))\<^sup>+"
-
-(* Another way is to use an auxiliary variable to control termination and thus 
-   decide whether a process behaves like skip or not.*)
-
-
-
-term "wmr_state_axioms"
-
-term "PSEqs"
-term "PSEvolution"
 
 lemma "TimerEvo \<delta> (yw +\<^sub>L mx +\<^sub>L my) PSEqs (True)\<^sub>e nmods avLW = 0 \<and> avRW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0"
   unfolding TimerEvo_def apply expr_auto oops
@@ -445,13 +357,12 @@ lemma "\<^bold>{avLW = 0 \<and> avRW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<
 
 (* Actual system model *)
 
-abbreviation "Step2 \<delta> \<equiv> EvolveUntil \<delta> PSEqsVars PSEqs"
-abbreviation "System3 \<equiv> Init ; Step2 \<epsilon>\<^sub>s ; (T(Ctrl) ; Step2 (TimeScale*Cycle))\<^sup>+"
 
-term "Step2 d"
 
-lemma Step2_not_wait:
-  "\<^bold>{ \<not> wait \<^bold>} Step2 \<delta> \<^bold>{ \<not> wait \<longrightarrow> timer = \<delta> \<^bold>}"
+term "Step d"
+
+lemma Step_not_wait:
+  "\<^bold>{ \<not> wait \<^bold>} Step \<delta> \<^bold>{ \<not> wait \<longrightarrow> timer = \<delta> \<^bold>}"
   unfolding T_def EvolveUntil_def
   apply (rule hoare_if_then_else)
    apply ((simp only:kcomp_assoc)?, rule hoare_floyd_kcomp, simp)
@@ -467,7 +378,7 @@ lemma "\<^bold>{ wait \<and> P \<^bold>} T(X) \<^bold>{ wait \<and> P \<^bold>}"
 
 lemma 
   "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw) \<and> t = t\<^sub>0 \<^bold>} 
-    System1
+    System
    \<^bold>{ yw = yw\<^sub>0 \<and> (\<exists>\<epsilon>\<^sub>0. 0 \<le> \<epsilon>\<^sub>0 \<and> \<epsilon>\<^sub>0 \<le> \<epsilon>\<^sub>s 
                 \<and> mx = mx\<^sub>i + (t+\<epsilon>\<^sub>0)*LV * cos(yw) 
                 \<and> my = my\<^sub>i + (t+\<epsilon>\<^sub>0)*LV * sin(yw)) \<^bold>}"
@@ -479,24 +390,16 @@ lemma Ctrl_t_increasing:
   unfolding Ctrl_def ifthenelse_def
   by (nmods_auto)
 
-
-
-
-
 lemma "$wait \<sharp> ($avLW = 0 \<and> $avRW = 0 \<and> $yw = yw\<^sub>0 \<and> $mx = mx\<^sub>0 \<and> $my = my\<^sub>0 \<and> $executing \<and> $state = Initial)\<^sub>e"
   by unrest
-  apply (auto simp add: unrest_ssubst var_alpha_combine usubst_eval sset_def)
-  using robosim_axioms robosim.indeps robosim.vwbs unrest_var var_alpha_indep apply simp
-  unfolding SEXP_def apply (unrest add:robosim_axioms robosim.indeps robosim.vwbs robosim_axioms)
-  by (metis SEXP_def idem_scene_var robosim.indeps(1) robosim.vwbs(1) robosim.vwbs(2) robosim_axioms unrest_var var_alpha_indep)
-
+  
 (* In general, we are only interested in showing the second conjunct. Even then, it's unclear
    how that can it become an invariant over the ODE directly. Could it become... ?
    which we know how to prove *)
 
 lemma Evo_at_rest:
   "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * cos(yw) \<and> my = my\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * sin(yw) \<^bold>} 
-     (T(Ctrl) ; Step2 (TimeScale*Cycle))\<^sup>*
+     (T(Ctrl) ; Step (TimeScale*Cycle))\<^sup>*
    \<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * cos(yw) \<and> my = my\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * sin(yw) \<^bold>}"
   unfolding Ctrl_def (* apply (rule cycle_loop) *)
   thm cycle_loop
@@ -534,7 +437,7 @@ lemma "\<^bold>{ avRW = 0 \<and> avLW = 0 \<^bold>} CInit \<^bold>{ timer < \<ep
 
 lemma 
   "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i \<and> t = t\<^sub>0 \<^bold>} 
-    System1
+    System
    \<^bold>{ yw = yw\<^sub>0 \<and> (\<exists>\<epsilon>\<^sub>0. 0 \<le> \<epsilon>\<^sub>0 \<and> \<epsilon>\<^sub>0 \<le> \<epsilon>\<^sub>s 
                 \<and> mx = mx\<^sub>i + (if (t-(t\<^sub>0+\<epsilon>\<^sub>0)) \<le> 0 then 0 else (t-(t\<^sub>0+\<epsilon>\<^sub>0))*LV * cos(yw)) 
                 \<and> my = my\<^sub>i + (if (t-(t\<^sub>0+\<epsilon>\<^sub>0)) \<le> 0 then 0 else (t-(t\<^sub>0+\<epsilon>\<^sub>0))*LV * sin(yw))) \<^bold>}"
@@ -543,7 +446,7 @@ lemma
 (* This is equivalent to the following *)
 
 lemma "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i \<and> t = t\<^sub>0 \<^bold>} 
-        System1
+        System
        \<^bold>{ yw = yw\<^sub>0 \<and> (\<exists>\<epsilon>\<^sub>0. 0 \<le> \<epsilon>\<^sub>0 \<and> \<epsilon>\<^sub>0 \<le> \<epsilon>\<^sub>s
                     \<and> (t \<le> t\<^sub>0+\<epsilon>\<^sub>0 \<longrightarrow> mx = mx\<^sub>i) \<and> (t > t\<^sub>0+\<epsilon>\<^sub>0 \<longrightarrow> mx = mx\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV*cos(yw)) 
                     \<and> (t \<le> t\<^sub>0+\<epsilon>\<^sub>0 \<longrightarrow> my = my\<^sub>i) \<and> (t > t\<^sub>0+\<epsilon>\<^sub>0 \<longrightarrow> mx = mx\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV*cos(yw))) \<^bold>}"
@@ -555,7 +458,7 @@ lemma "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i \
 
 lemma 
   "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw) \<and> t = t\<^sub>0 \<^bold>} 
-    System1
+    System
    \<^bold>{ yw = yw\<^sub>0 \<and> (\<exists>\<epsilon>\<^sub>0. 0 \<le> \<epsilon>\<^sub>0 \<and> \<epsilon>\<^sub>0 \<le> \<epsilon>\<^sub>s 
                 \<and> mx = mx\<^sub>i + (t+\<epsilon>\<^sub>0)*LV * cos(yw) 
                 \<and> my = my\<^sub>i + (t+\<epsilon>\<^sub>0)*LV * sin(yw)) \<^bold>}"
@@ -573,7 +476,7 @@ lemma "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i \
        \<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i \<^bold>}"
   unfolding DInit_def
   by (hoare_wp_auto)
-
+(*
 lemma "\<^bold>{ \<^bold>} CInit \<^bold>{ \<^bold>}"
 
 text \<open> In the first case, we show that if no obstacles => only linear behaviour relevant. \<close>
@@ -599,12 +502,14 @@ lemma PSE_angular_motion:
    \<^bold>{avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and> yw = yw\<^sub>0 - timer*AV \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i\<^bold>}"
   apply (dInduct_mega)
   using non_zeros apply force+
-  by (dInduct_mega)
+  by (dInduct_mega) *)
 
 end
 
 context wmr_no_obstacle
 begin
+
+text \<open> In a context where there are no obstacles. \<close>
 
 lemma IRVoltage_below_3:"\<not> 3 \<le> $IRVoltage"
   using eq_IRVoltage_IRDistance no_obstacle 
@@ -614,10 +519,10 @@ text \<open> What we really want to prove: overall, system moves linearly. \<clo
 
 lemma Evo_at_rest:
   "\<^bold>{ avLW = 0 \<and> avRW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<and> t = t\<^sub>0 \<^bold>} 
-     System3
+     System
    \<^bold>{(t < t\<^sub>0 + \<epsilon>\<^sub>s \<longrightarrow> (avLW = 0 \<and> avRW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0)) \<and>
     (t\<^sub>0 + \<epsilon>\<^sub>s \<le> t \<longrightarrow> (yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * cos(yw) \<and> my = my\<^sub>0 + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * sin(yw))) \<^bold>}"
-  unfolding Init_def DInit_def Reset_def 
+  unfolding Init_def DInit_def 
   apply (hoare_help)
   apply (rule hoare_weaken_pre_conj[where
          P="(($avLW = 0 \<and> $avRW = 0 \<and> $yw = yw\<^sub>0 \<and> $mx = mx\<^sub>0 \<and> $my = my\<^sub>0 \<and> $executing \<and> $state = Initial) \<and> $t = t\<^sub>0 \<and> \<not> $wait)\<^sup>e"], wlp_full)  
@@ -637,67 +542,6 @@ lemma Evo_at_rest:
   apply (hoare_help)
   done
 
-lemma
-  "\<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (t-\<epsilon>\<^sub>s)*LV * cos(yw) \<and> my = my\<^sub>i + timer*LV * sin(yw)\<^bold>}
-    System1
-   \<^bold>{yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (t-\<epsilon>\<^sub>s)*LV * cos(yw) \<and> my = my\<^sub>i + timer*LV * sin(yw)\<^bold>}"
-  oops
-
-
-
-(* What I really need to show *)
-
-(* Take the following two *)
-
-
-thm hoare_kcomp_inv_rhs
-thm hoare_kcomp
-
-
-(* Q: Is there a better way to define a constant that has IRVoltage, IRDistance, etc? *)
-
-(*
-lemma SendToSoftware_nmods_IRVoltage [nmods]:
-  "SendToSoftware nmods {IRVoltage,avLW,avRW,mx,yx,yw,t}"
-  unfolding SendToSoftware_def
-  by nmods_auto
-
-lemma SimSMovement_nmods_IRVoltage [nmods]: 
-  "SimSMovement nmods {IRVoltage,mx,yx,yw,t}"
-  unfolding SimSMovement_def 
-  by nmods_auto
-
-lemma Ctrl_nmods [nmods]: 
-  "Ctrl nmods {IRVoltage,mx,yx,yw,t}"
-  unfolding Ctrl_def by nmods_auto
-
-lemma IF_Ctrl_Skip:
-  "(IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip) nmods {IRVoltage,mx,yx,yw,t}"
-  by nmods_auto
-*)
-
-lemma PSEvolution_nmods:
-  "PSEvolution nmods {state}"
-  by (auto intro!:closure, subst_eval)
-
-lemma PSE_linear_motion':
-  "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing 
-      \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-    PSEvolution
-   \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing 
-      \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  apply (dInduct_mega)
-   apply (rule nmods_invariant) 
-   defer
-   apply (dInduct_mega)
-   apply (rule nmods_invariant) 
-    defer
-   apply (dInduct_mega)
-  using non_zeros apply blast
-   apply (dInduct_mega)
-  using non_zeros apply blast
-  by (auto intro!:closure, subst_eval, subst_eval)
-
 lemma "\<^bold>{P\<^bold>} SendToSoftware \<^bold>{P \<and> \<not>obstacle\<^bold>}"
   apply (hoare_wp_auto)
   using no_obstacle IRDistance_no_detect_iff eq_IRVoltage_IRDistance
@@ -709,15 +553,10 @@ lemma SimSMovement_maintain_linear_motion:
    \<^bold>{\<not> obstacle \<and> avLW = avRW\<^bold>}"
   by (hoare_wp_simp)
 
-(*
-lemma unfold_while:
-  assumes "`P \<longrightarrow> X`" "\<^bold>{P\<^bold>} (\<questiondown>X? ; Y)\<^sup>* ; Z \<^bold>{Q\<^bold>}"
-  shows "\<^bold>{P\<^bold>} Y ; (\<questiondown>X? ; Y)\<^sup>* ; Z \<^bold>{Q\<^bold>}"
-  using assms 
-  by (metis (mono_tags, lifting) SEXP_def fbox_def fbox_kcomp predicate1D predicate1I)
-*)
-
 end
+
+context wmr
+begin
 
 text \<open> If you do have obstacles, then what should the property
        we're after look like? \<close>
@@ -732,12 +571,24 @@ text \<open> If it's a path we're talking about, then it is fairly simple,
 (* Turning property: if the detected voltage is higher for a certain period of time between 
                      t\<^sub>0 and t\<^sub>1, where t\<^sub>1 - t\<^sub>0 > \<epsilon>\<^sub>d, where \<epsilon>\<^sub>d needs to be at least one simulation 
                      cycle? *)
+
+text \<open> The following property states that if by the time (\<epsilon>+c*TimeScale*Cycle) that the software
+       is executing, then, if IRVoltage > 3, for at least the next cycle, that is when t is 
+       between (\<epsilon>+c*TimeScale*Cycle) and (\<epsilon>+2*c*TimeScale*Cycle), the movement is angular with
+       speed given by AV. \<close>
+
 lemma Evo_turning:
-  assumes "t\<^sub>1 - t\<^sub>0 \<le> TimeScale * real Cycle"
-  shows "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<and> ((t\<^sub>0 \<le> t \<and> t \<le> t\<^sub>1) \<longrightarrow> IRVoltage > 3) \<^bold>} 
-          System3
-         \<^bold>{(t < t\<^sub>0 + \<epsilon>\<^sub>s \<longrightarrow> (avLW = 0 \<and> avRW = 0 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0)) \<and>
-          (t\<^sub>0 + \<epsilon>\<^sub>s \<le> t \<longrightarrow> (yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * cos(yw) \<and> my = my\<^sub>0 + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * sin(yw))) \<^bold>}"
+  fixes c :: nat and t\<^sub>0 :: real and t\<^sub>1 :: real
+  shows "\<^bold>{ True \<^bold>} 
+          System
+         \<^bold>{ (t = (\<epsilon>\<^sub>s+c*TimeScale*Cycle) \<longrightarrow> (IRVoltage > 3 \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0))
+            \<and>
+           (((\<epsilon>\<^sub>s+c*TimeScale*Cycle) \<le> t \<and> t < (\<epsilon>\<^sub>s+2*c*TimeScale*Cycle))
+            \<longrightarrow> yw = yw\<^sub>0 + (t-(\<epsilon>\<^sub>s+c*TimeScale*Cycle))*AV) \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}"
+
+(* Question: can we use this to prove a more general property about continuous angular movement?
+             ie. one that states that the system keeps rotating between cycles so long as the
+                 voltage at each such cycles is maintained. *)
 
 
 theorem 

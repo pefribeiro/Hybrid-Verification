@@ -32,11 +32,12 @@ dataspace robosim =
   constants
     Cycle :: nat
     TimeScale :: real
+    \<epsilon>\<^sub>s        :: real \<comment> \<open> Initial delay before simulation starts. \<close>
   variables
-    executing :: bool
-    wait  :: bool
-    timer :: real
-    t     :: real
+    executing :: bool \<comment> \<open> Used to model 'exec'. \<close>
+    wait  :: bool \<comment> \<open> Used for modelling reactive termination. \<close>
+    timer :: real \<comment> \<open> Continuous time within each simulation cycle. \<close>
+    t     :: real \<comment> \<open> Global time. \<close>
 
 context robosim
 begin
@@ -537,6 +538,146 @@ lemma EvolveUntil_two_post_plus:
   apply (rule hoare_weaken_pre_conj[where P="(\<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> \<le> t)\<^sup>e"], simp)
   using assms(9) apply fastforce
   using assms by auto*)
+
+(* Wouldn't it be nice to be able to have derivatives in the pre/post-conditions?
+   Or how about a hybrid refinement checker? *)
+
+
+definition kstar_fixed :: "('a \<Rightarrow> 'a set) \<Rightarrow> nat \<Rightarrow> ('a \<Rightarrow> 'a set)" ("(_\<^bsup>_\<^esup>)" [1000] 999)
+  where [prog_defs]: "(f\<^bsup>n\<^esup>) = (\<Sqinter>i\<in>{0..n}. kpower f i)"
+
+lemma kstar_0[simp]: "(P\<^bsup>0\<^esup>) = skip"
+  unfolding kstar_fixed_def skip_def Nondet_choice_def kpower_def by auto
+
+lemma kstar_fixed_comp_rhs: "(P\<^bsup>n\<^esup>) ; P = (\<Sqinter>i\<in>{1..Suc n}. (kpower P i))"
+proof -
+  have "(P\<^bsup>n\<^esup>) ; P = (\<Sqinter>i\<in>{0..n}. kpower P i) ; P"
+    unfolding kstar_fixed_def by auto
+  also have "... = (\<Sqinter>i\<in>{0..n}. (kpower P i ; P))"
+    unfolding Nondet_choice_def 
+    by (auto simp add:fun_eq_iff kcomp_def)
+  also have "... = (\<Sqinter>i\<in>{0..n}. (kpower P (Suc i)))"
+    by (auto simp add:kpower_Suc')
+  also have "... = (\<Sqinter>i\<in>{1..Suc n}. (kpower P i))"
+    apply (auto simp add:Nondet_choice_def fun_eq_iff)
+     apply (meson Suc_leI Suc_le_mono atLeastAtMost_iff zero_less_Suc)
+    by (metis intervalE less_Suc_eq_0_disj less_Suc_eq_le linorder_not_le)
+  finally show ?thesis .
+qed
+
+lemma kstar_fixed_comp_lhs: "P ; (P\<^bsup>n\<^esup>) = (\<Sqinter>i\<in>{1..Suc n}. (kpower P i))"
+proof -
+  have "P ; (P\<^bsup>n\<^esup>) = P ; (\<Sqinter>i\<in>{0..n}. kpower P i)"
+    unfolding kstar_fixed_def by auto
+  also have "... = (\<Sqinter>i\<in>{0..n}. (P ; kpower P i))"
+    unfolding Nondet_choice_def 
+    by (auto simp add:fun_eq_iff kcomp_def)
+  also have "... = (\<Sqinter>i\<in>{0..n}. (kpower P (Suc i)))"
+    by (auto simp add:kpower_Suc)
+  also have "... = (\<Sqinter>i\<in>{1..Suc n}. (kpower P i))"
+    apply (auto simp add:Nondet_choice_def fun_eq_iff)
+     apply (meson Suc_leI Suc_le_mono atLeastAtMost_iff zero_less_Suc)
+    by (metis intervalE less_Suc_eq_0_disj less_Suc_eq_le linorder_not_le)
+  finally show ?thesis .
+qed
+
+lemma kstar_plus: "P ; (P\<^bsup>n\<^esup>) = (P\<^bsup>n+1\<^esup>)"
+  unfolding kstar_fixed_def Nondet_choice_def kcomp_def
+  apply (auto simp add:fun_eq_iff)
+   apply (smt (verit, ccfv_SIG) Suc_leI UN_I bot_nat_0.extremum comp_apply comp_apply intervalE kcomp_def kcomp_kpower kpower_Suc' le_imp_less_Suc)
+  oops
+
+lemma kstar_fixed_comp_commute: "(P\<^bsup>n\<^esup>) ; P = P ; (P\<^bsup>n\<^esup>)"
+  using kstar_fixed_comp_rhs kstar_fixed_comp_lhs by metis
+
+lemma "Suc n - 1 = n"
+  apply auto
+
+lemma "P\<^bsup>Suc n\<^esup> ; P\<^bsup>n\<^esup> = P\<^bsup>n\<^esup>"
+  unfolding kstar_fixed_def Nondet_choice_def kcomp_def
+  apply (auto simp add:fun_eq_iff)
+  oops
+
+lemma kpower_kcomp_sum: "kpower P y ; kpower P x = kpower P (y + x)"
+proof (induct y)
+  case 0
+  then show ?case 
+    by (simp add: kcomp_skip(2) kpower_0')
+next
+  case (Suc y)
+  then show ?case
+    by (simp add: kcomp_assoc kpower_Suc)
+qed
+
+lemma kstar_fixed_comp_eq_kstar:"(P\<^bsup>n\<^esup>) ; P\<^sup>* = P\<^sup>*"
+proof(intro ext set_eqI iffI conjI impI, goal_cases "\<subseteq>" "\<supseteq>")
+   case ("\<subseteq>" s s')
+   then obtain y x where "s' \<in> (kpower P y ; kpower P x) s"
+    unfolding kcomp_eq kstar_def kstar_fixed_def Nondet_choice_def
+    by auto
+  hence "s' \<in> kpower P (y + x) s"
+    using kpower_kcomp_sum
+    by metis
+  then show ?case
+    using kstar_def by fastforce
+ next
+   case (\<supseteq> s s') (* Just need a way to distribute the n between the composition. Case split maybe? *)
+   then show ?case
+    unfolding kcomp_def kstar_fixed_def kstar_def Nondet_choice_def apply auto
+    by (metis atLeast0AtMost atMost_iff insertI1 kpower_0 zero_le)
+qed
+
+lemma kstar_fixed_comp_eq_kstar_one: "P\<^bsup>c\<^esup> ; P\<^sup>+ = P\<^sup>+"
+  unfolding kstar_one_def
+  by (metis kcomp_assoc kcomp_kstar kstar_fixed_comp_eq_kstar)
+
+lemma kstar_one_def_alt:"P\<^sup>+ = P ; (\<Sqinter>i\<in>UNIV. P\<^bsup>i\<^esup>)"
+  unfolding kstar_one_def Nondet_choice_def kcomp_def kstar_fixed_def
+  apply (auto simp add:fun_eq_iff)
+  apply (metis Nondet_choice_def UN_E atLeast0AtMost atMost_iff kstar_alt le_add2)
+  using kstar_def by fastforce
+
+lemma
+  fixes c::nat
+  assumes "`t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<longrightarrow> I\<^sub>T`"
+          "a \<bowtie> wait" 
+          "$wait \<sharp> I\<^sub>T" "$timer \<sharp> I\<^sub>T" "vwb_lens a" "t \<bowtie> a" "timer \<bowtie> a"
+          "\<^bold>{ t = (\<guillemotleft>t\<^sub>0\<guillemotright>) \<and> I\<^sub>T \<^bold>}
+           (T(C) ; EvolveUntil tcycle a \<sigma>)
+           \<^bold>{ (t = (\<guillemotleft>t\<^sub>0\<guillemotright>) \<longrightarrow> I\<^sub>T) \<and> ((\<guillemotleft>t\<^sub>0\<guillemotright> \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>}
+         (T(C) ; EvolveUntil tcycle a \<sigma>)\<^sup>+
+         \<^bold>{ (t = (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>T) \<and> (((\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>+2*\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}"
+  using assms(2-)
+  (* We have the ability to tackle the design, rather than just specification. *)
+
+  (* Key here is: c*tcycle controls how many times the loop gets unfolded, so need
+     an inductive proof?
+
+     We need a way to transform this into a proof of:
+
+     \<^bold>{ t = (\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<and> I\<^sub>T \<^bold>} 
+     (T(C) ; EvolveUntil tcycle a \<sigma>)
+     \<^bold>{ (t = (\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>T) \<and> (((\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<le> t \<and> t < (2*\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}
+     \<Longrightarrow>
+     \<^bold>{ t = (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<and> I\<^sub>T \<^bold>} 
+     (T(C) ; EvolveUntil tcycle a \<sigma>)
+     \<^bold>{ (t = (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>T) \<and> (((\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>+2*\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}
+     \<Longrightarrow>
+     \<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} 
+     (T(C) ; EvolveUntil tcycle a \<sigma>)\<^sup>+
+     \<^bold>{ (t = (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>T) \<and> (((\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>+2*\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}
+      
+     For any amount of time between t\<^sub>0 and \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>, we can unfold the computation 
+     c times. Need to show this.
+
+     Obs 1: Also it seems we may need a healthiness condition over the ODE system to state that 
+            it is invariant to the choice of t value, so that t is only used for relative time?
+
+     Obs 2: Should the auxiliary variable wait be named differently, eg. evolving, to distinguish
+            it from the role played in the theory of reactive processes? 
+  *)
+  using assms 
 
 lemma ini_cycle_loop:
   assumes "\<^bold>{P\<^bold>} I \<^bold>{P\<^bold>}" "\<^bold>{P\<^bold>} C \<^bold>{Q\<^bold>}" "\<^bold>{Q\<^bold>} C \<^bold>{Q\<^bold>}" "\<^bold>{Q\<^bold>} E \<^bold>{Q\<^bold>}"
