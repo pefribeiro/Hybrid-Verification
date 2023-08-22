@@ -4,6 +4,7 @@ imports
   "Hybrid-Verification.Hybrid_Verification"
   "Hoare_Help"
   "RoboSim"
+  "HOL-Library.FSet"
 begin
 
 lit_vars
@@ -26,6 +27,8 @@ dataspace wmr_state = robosim +
     mass   :: real
     WIDTH  :: real
     LENGTH :: real
+    \<comment> \<open> s-model fixed quantities \<close>
+    obstacles :: "(real vec[4]) fset" (* or just one obstacle? [x,y,yaw,length] *)
   assumes
     non_zeros: "RADIUS > 0" "WIDTH > 0" "LENGTH > 0" "\<epsilon>\<^sub>s > 0" "\<epsilon>\<^sub>s < 1"
   variables
@@ -57,6 +60,72 @@ dataspace wmr_no_obstacle = wmr +
 
 context wmr
 begin
+
+definition boxBoundary :: "real \<Rightarrow> (real \<times> real) set" where 
+"boxBoundary L = 
+    {(x,y).   (x = L/2 \<and> (-L/2 \<le> y \<or> y \<le> L/2))
+            \<or> (x = -L/2 \<and> (-L/2 \<le> y \<or> y \<le> L/2))
+            \<or> (y = L/2 \<and> (-L/2 \<le> x \<or> x \<le> L/2))
+            \<or> (y = -L/2 \<and> (-L/2 \<le> x \<or> x \<le> L/2))
+    }" 
+
+term "a::(real mat[1,1])"
+
+lemma transpose_vec:"\<^bold>[[x,y]\<^bold>]\<^sup>T = \<^bold>[[x],[y]\<^bold>]"
+  apply (simp add:matrix_eq_iff)
+  apply (auto simp add:transpose_def)
+  apply (case_tac i)
+  by (metis One_nat_def Suc_1 Suc_leI Suc_less_eq atLeastLessThan_iff bot_nat_0.extremum_unique card_bit0 card_num1 mult_numeral_1_right nat_of_range not0_implies_Suc nth_Cons_0 nth_Cons_Suc numeral_One)
+
+text \<open> Rotation matrix in 2D plane. \<close>
+
+definition Rotation :: "real \<Rightarrow> (real mat[2,2])" where
+"Rotation \<theta> = \<^bold>[[cos \<theta>, - sin \<theta>],[sin \<theta>, cos \<theta>]\<^bold>]" (* Is this perhaps already defined elsewhere? *)
+
+lemma Rotation_pi_over_2:"Rotation (pi/2) = \<^bold>[[0, -1],[1, 0]\<^bold>]"
+  unfolding Rotation_def
+  by fastforce
+
+lemma "(Rotation (pi/2) ** \<^bold>[[1,0]\<^bold>]\<^sup>T) = \<^bold>[[0,1]\<^bold>]\<^sup>T"
+  apply (auto simp add:Rotation_pi_over_2 transpose_vec)
+  apply (vector)
+  apply (auto simp add:matrix_matrix_mult_def)
+  apply (case_tac i, auto)
+   by (smt (verit, del_insts) One_nat_def card_bit0 card_num1 exhaust_2 less_2_cases_iff mult_cancel_left1 mult_cancel_right2 mult_numeral_1_right nat_of_0 nat_of_1 nth_Cons_0 nth_Cons_Suc num1_eq1 numerals(1) sum_2)
+ (* Is there a better way to calculate such simple results? *)
+
+text \<open> Function that given a finite set of obstacle descriptions 
+       (vectors with 4 components (x,y,yaw,length))
+       returns the obstacle boundaries in the absolute reference frame. \<close>
+
+definition obsBoundaries :: "(real vec[4]) fset \<Rightarrow> (real \<times> real) set" where 
+"obsBoundaries obs = 
+  {(x,y). \<exists>mx my yw L. \<^bold>[[mx, my, yw, L]\<^bold>] |\<in>| obs 
+          \<and> \<^bold>[[x, y]\<^bold>]\<^sup>T \<in> (\<lambda>(x,y). \<^bold>[[mx, my]\<^bold>]\<^sup>T + (Rotation yw ** \<^bold>[[x,y]\<^bold>]\<^sup>T)) ` (boxBoundary L) }"
+
+text \<open> Function that given an angle \<theta> returns the set of points in its range, where
+       range is over the angle -\<theta>/2 and +\<theta>/2. \<close>
+
+definition visRange :: "real \<Rightarrow> (real \<times> real) set" where
+"visRange \<theta> = {(x,y). \<exists>k \<beta>. 0 \<le> k \<and> (- \<theta>/2) \<le> \<beta> \<and> \<beta> \<le> (\<theta>/2) \<and> \<^bold>[[x,y]\<^bold>]\<^sup>T = Rotation \<beta> ** \<^bold>[[k,0]\<^bold>]\<^sup>T}"
+
+text \<open> Given a vector pose for the sensor, and its horizontal field of view, yields 
+       the set of points in its range.  \<close>
+
+definition senRange :: "real vec[3] \<Rightarrow> real \<Rightarrow> (real \<times> real) set" where
+"senRange v \<theta> = {(x,y). \<^bold>[[x, y]\<^bold>]\<^sup>T \<in> (\<lambda>(x,y). \<^bold>[[v$0$0,v$0$1]\<^bold>]\<^sup>T + (Rotation (v$0$2) ** \<^bold>[[x,y]\<^bold>]\<^sup>T)) ` (visRange \<theta>)}"
+
+definition vec2to3 :: "(real vec[2]) \<Rightarrow> (real vec[3])" where
+"vec2to3 v = \<^bold>[[v$0$0,v$0$1,0]\<^bold>]"
+
+definition sensorPose :: "(real vec[3]) \<Rightarrow> (real vec[3])" where
+"sensorPose v = v + (vec2to3 ((Rotation (v$0$2) ** \<^bold>[[(LENGTH/2),0]\<^bold>]\<^sup>T)\<^sup>T))"
+
+definition distances :: "real vec[3] \<Rightarrow> real \<Rightarrow> (real vec[4]) fset \<Rightarrow> real set" where
+"distances v \<theta> obs = {d. \<exists>x y. (x,y) \<in> ((senRange (sensorPose v) \<theta>) \<inter> obsBoundaries obs) \<and> d = \<parallel>\<^bold>[[v$0$0,v$0$1]\<^bold>] - \<^bold>[[x,y]\<^bold>]\<parallel>}"
+
+definition minDistance :: "real vec[3] \<Rightarrow> real \<Rightarrow> (real vec[4]) fset \<Rightarrow> real" where
+"minDistance v \<theta> obs = Min(distances v \<theta> obs)"
 
 section \<open> Platform mapping \<close>
 
