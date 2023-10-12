@@ -87,6 +87,12 @@ lemma hoare_T_wait':
   unfolding T_def
   using assms by fastforce
 
+lemma hoare_T_wait_skip:
+  assumes "`P \<longrightarrow> wait`" "\<^bold>{ P \<^bold>} skip \<^bold>{ Q \<^bold>}"
+  shows "\<^bold>{ P \<^bold>} T X \<^bold>{ Q \<^bold>}"
+  unfolding T_def
+  by (smt (verit, del_insts) SEXP_def assms(1) assms(2) fbox_if_then_else predicate1D predicate1I taut_def)
+
 lemma T_idempotent:"T(T(P)) = T(P)"
   unfolding T_def
   unfolding ifthenelse_def apply auto
@@ -102,6 +108,14 @@ definition
      )"
 
 text \<open> We now prove several useful results about EvolveUntil \<close>
+
+lemma EvoleUntil_wait_skip:
+  assumes "`P \<longrightarrow> wait`" "\<^bold>{ P \<^bold>} skip \<^bold>{ Q \<^bold>}"
+  shows "\<^bold>{ P \<^bold>} EvolveUntil \<delta> a \<sigma> \<^bold>{ Q \<^bold>}"
+  apply (rule hoare_weaken_pre_conj[where P="(P)\<^sup>e"])
+  using assms apply expr_simp
+  unfolding EvolveUntil_def
+  using hoare_T_wait_skip assms by blast
 
 lemma
   assumes "vwb_lens a" "$t \<sharp> e" "$timer \<sharp> e" "$a \<sharp> e" "$wait \<sharp> e" 
@@ -441,6 +455,11 @@ lemma hoare_pre_eq:
   shows "\<^bold>{R\<^bold>} X \<^bold>{S\<^bold>}"
   using assms by auto
 
+lemma hoare_post_eq:
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{R\<^bold>}" "R = S"
+  shows "\<^bold>{P\<^bold>} X \<^bold>{S\<^bold>}"
+  using assms by auto
+
 lemma EvolveUntil_two_post:
   assumes "a \<bowtie> wait" 
           "\<^bold>{P\<^bold>} TimerEvo \<delta> a \<sigma> (True)\<^sup>e \<^bold>{P\<^bold>}" (* Might want to relax this assumption. *)
@@ -549,6 +568,12 @@ definition kstar_fixed :: "('a \<Rightarrow> 'a set) \<Rightarrow> nat \<Rightar
 lemma kstar_0[simp]: "(P\<^bsup>0\<^esup>) = skip"
   unfolding kstar_fixed_def skip_def Nondet_choice_def kpower_def by auto
 
+lemma kstar_1: "(P\<^bsup>1\<^esup>) = P \<sqinter> skip"
+  unfolding kstar_fixed_def skip_def Nondet_choice_def nondet_choice_def kpower_def
+  apply (auto simp add:fun_eq_iff)
+  apply (metis One_nat_def Suc_eq_plus1 empty_iff funpow_0 insert_iff kcomp_id(2) kcomp_skip(1) kpower_Suc kpower_def le_add2 le_antisym list_decode.cases)
+  by (metis Suc_le_mono atLeast0AtMost atMost_iff kcomp_id(2) kcomp_skip(1) kpower_Suc_0 kpower_def zero_le)
+
 lemma kstar_fixed_comp_rhs: "(P\<^bsup>n\<^esup>) ; P = (\<Sqinter>i\<in>{1..Suc n}. (kpower P i))"
 proof -
   have "(P\<^bsup>n\<^esup>) ; P = (\<Sqinter>i\<in>{0..n}. kpower P i) ; P"
@@ -585,18 +610,11 @@ lemma kstar_plus: "P ; (P\<^bsup>n\<^esup>) = (P\<^bsup>n+1\<^esup>)"
   unfolding kstar_fixed_def Nondet_choice_def kcomp_def
   apply (auto simp add:fun_eq_iff)
    apply (smt (verit, ccfv_SIG) Suc_leI UN_I bot_nat_0.extremum comp_apply comp_apply intervalE kcomp_def kcomp_kpower kpower_Suc' le_imp_less_Suc)
+  unfolding kpower_def
   oops
 
 lemma kstar_fixed_comp_commute: "(P\<^bsup>n\<^esup>) ; P = P ; (P\<^bsup>n\<^esup>)"
   using kstar_fixed_comp_rhs kstar_fixed_comp_lhs by metis
-
-lemma "Suc n - 1 = n"
-  apply auto
-
-lemma "P\<^bsup>Suc n\<^esup> ; P\<^bsup>n\<^esup> = P\<^bsup>n\<^esup>"
-  unfolding kstar_fixed_def Nondet_choice_def kcomp_def
-  apply (auto simp add:fun_eq_iff)
-  oops
 
 lemma kpower_kcomp_sum: "kpower P y ; kpower P x = kpower P (y + x)"
 proof (induct y)
@@ -637,18 +655,386 @@ lemma kstar_one_def_alt:"P\<^sup>+ = P ; (\<Sqinter>i\<in>UNIV. P\<^bsup>i\<^esu
   apply (metis Nondet_choice_def UN_E atLeast0AtMost atMost_iff kstar_alt le_add2)
   using kstar_def by fastforce
 
+lemma Nondet_choice_right_dist':
+  "(\<Sqinter>i\<in>{0..n}. P i) ; R = (\<Sqinter>i\<in>{0..n}. (P i ; R))"
+  unfolding Nondet_choice_def kcomp_def 
+  by (auto simp add:fun_eq_iff)
+
+lemma Nondet_choice_left_dist':
+  "R ; (\<Sqinter>i\<in>{0..n}. P i) = (\<Sqinter>i\<in>{0..n}. (R ; P i))"
+  unfolding Nondet_choice_def kcomp_def 
+  by (auto simp add:fun_eq_iff)
+
+lemma kstar_fixed_plus_kcomp: "(P\<^bsup>n\<^esup>) ; (P\<^bsup>m\<^esup>) = (P\<^bsup>n+m\<^esup>)"
+proof -
+  have "(P\<^bsup>n\<^esup>) ; (P\<^bsup>m\<^esup>) = ((\<Sqinter>i\<in>{0..n}. kpower P i) ; (\<Sqinter>j\<in>{0..m}. kpower P j))"
+    unfolding kstar_fixed_def by auto
+  also have "... = ((\<Sqinter>i\<in>{0..n}. (kpower P i ; (\<Sqinter>j\<in>{0..m}. kpower P j))))"
+    using Nondet_choice_right_dist' by metis
+  also have "... = ((\<Sqinter>i\<in>{0..n}. (\<Sqinter>j\<in>{0..m}. kpower P i ; kpower P j)))"
+    by (auto simp add:Nondet_choice_left_dist')
+  also have "... = (\<Sqinter>i\<in>{0..n}. (\<Sqinter>j\<in>{0..m}. kpower P (i + j)))"
+    by (simp add: kpower_kcomp_sum)
+  also have "... = (\<Sqinter>z\<in>{0..n+m}. kpower P z)"
+    unfolding Nondet_choice_def
+    apply (auto simp add:fun_eq_iff kcomp_def)
+     apply fastforce
+    by (metis add_cancel_right_left intervalE le_add1 le_add_diff_inverse le_diff_conv nat_le_linear)
+  finally show ?thesis 
+    by (auto simp add:kstar_fixed_def)
+qed
+
+(*
+lemma kstar_fixed_comp_Suc:"(P\<^bsup>n\<^esup>) ; P = (P\<^bsup>Suc n\<^esup>)"
+proof(intro ext set_eqI iffI conjI impI, goal_cases "\<subseteq>" "\<supseteq>")
+  case ("\<subseteq>" x xa)
+  (*then have "xa \<in> kpower P n x"
+    unfolding kcomp_eq kstar_fixed_def Nondet_choice_def kpower_def apply auto
+    *)
+  then obtain y where y:"xa \<in> (kpower P y ; P) x \<and> y \<le> n"
+    unfolding kcomp_eq kstar_def kstar_fixed_def Nondet_choice_def
+    by auto+
+  then show ?case
+  proof (cases "y = n")
+    case True
+    then have "xa \<in> (kpower P n ; P) x"
+      using y by blast
+    then have "xa \<in> (kpower P n ; kpower P 1) x"
+      using kpower_Suc_0
+      by (metis One_nat_def)
+    then have "xa \<in> (kpower P (Suc n)) x"
+      by (metis True kpower_Suc' y)
+    then show ?thesis
+      unfolding kstar_fixed_def Nondet_choice_def by auto
+  next
+    case False
+    then show ?thesis sorry
+  qed
+  then have "xa \<in> (kpower P y ; kpower P 1) x"
+    using kpower_Suc_0
+    by (metis One_nat_def)
+  hence "xa \<in> kpower P (y + 1) x"
+    using kpower_kcomp_sum
+    by metis
+  then show ?case 
+    using kstar_def by fastforce
+next
+  case (\<supseteq> x xa)
+  then show ?case sorry
+qed
+*)
+
+(* The following lemma will get us to reason about the interval between
+   st = DMoving and st = Waiting.*)
 lemma
   fixes c::nat
   assumes "`t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<longrightarrow> I\<^sub>T`"
+          "`t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<longrightarrow> Q`" (* no obstacle? before *)
           "a \<bowtie> wait" 
           "$wait \<sharp> I\<^sub>T" "$timer \<sharp> I\<^sub>T" "vwb_lens a" "t \<bowtie> a" "timer \<bowtie> a"
-          "\<^bold>{ t = (\<guillemotleft>t\<^sub>0\<guillemotright>) \<and> I\<^sub>T \<^bold>}
+          (* P is an invariant before t\<^sub>0+c*tcycle *)
+          "\<^bold>{ P \<and> Q \<^bold>} (T(C) ; EvolveUntil tcycle a \<sigma>) \<^bold>{ P \<^bold>}"
+          (* From this we can deduce that P holds at t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c+1\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>? *)
+          (* At t = t\<^sub>0 we have that I\<^sub>T holds, and between t\<^sub>0 \<le> t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>tcycle\<guillemotright> I\<^sub>R holds *)
+          "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<and> P \<^bold>}
            (T(C) ; EvolveUntil tcycle a \<sigma>)
-           \<^bold>{ (t = (\<guillemotleft>t\<^sub>0\<guillemotright>) \<longrightarrow> I\<^sub>T) \<and> ((\<guillemotleft>t\<^sub>0\<guillemotright> \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}"
-  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>}
+           \<^bold>{ (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<le> t \<and> t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c+1\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>R \<^bold>}"
+          (* We can probably simplify this:*)
+          "\<^bold>{ P \<and> I\<^sub>T \<^bold>} C \<^bold>{ I\<^sub>R \<^bold>}"
+          (* I\<^sub>T is about continuous variables? *)
+          "\<^bold>{ I\<^sub>R \<^bold>} TimerEvo tcycle a \<sigma> (True)\<^sup>e \<^bold>{ I\<^sub>R \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<and> P \<^bold>}
          (T(C) ; EvolveUntil tcycle a \<sigma>)\<^sup>+
-         \<^bold>{ (t = (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>T) \<and> (((\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>+2*\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}"
-  using assms(2-)
+         \<^bold>{ (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c+1\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R \<^bold>}"
+  oops
+  (* Proof: need to 'unfold' the iteration 'c' times? ie.
+
+    (T(C) ; EvolveUntil tcycle a \<sigma>)\<^sup>C ; (T(C) ; EvolveUntil tcycle a \<sigma>)\<^sup>+
+
+     Then also need to show that for the above postcondition, we only
+     need to look at the RHS of the composition for one iteration.
+
+    ie. { t = t\<^sub>0 } (C ; EvolveUntil \<delta> a \<sigma>) { t < t\<^sub>0+\<delta>*c \<longrightarrow> Q } 
+        \<longrightarrow> 
+        { t = t\<^sub>0 } (C ; EvolveUntil \<delta> a \<sigma>)\<^sup>+ { t < t\<^sub>0+\<delta>*c \<longrightarrow> Q }
+     *)
+
+(* We need another, more generic, form of the above lemma, where we 
+   prove that the invariant holds for a longer interval, so that we
+   can state a result about the behaviour between st = STurning and
+   st = DTurning. This will be between t and t+nat(PI/AV) *)
+
+lemma "P\<^bsup>0\<^esup> = skip"
+
+lemma
+  assumes"\<^bold>{P\<^bold>} S \<^bold>{ Q \<and> R \<^bold>}"
+  shows "\<^bold>{ P \<^bold>} S \<^bold>{ Q \<longrightarrow> R \<^bold>}"
+  using assms
+  oops
+
+lemma 
+  assumes "\<^bold>{P\<^bold>} (S)\<^bsup>c\<^esup> ; S \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} (S)\<^bsup>Suc c\<^esup> \<^bold>{Q\<^bold>}"
+  using assms
+  unfolding kstar_fixed_def
+  oops
+
+lemma EvolveUntil_delta_cycles:
+  assumes "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} C \<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} kpower (T(C) ; EvolveUntil \<delta> a \<sigma>) c \<^bold>{ \<not> wait \<longrightarrow> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(real \<guillemotleft>c\<guillemotright>) \<le> t \<^bold>}"
+  oops
+
+lemma EvolveUntil_delta_cycles:
+  assumes "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} C \<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> \<^bold>{ \<not> wait \<longrightarrow> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(real \<guillemotleft>c\<guillemotright>) \<le> t \<^bold>}"
+proof (induct c)
+  case 0
+  then show ?case
+    apply (simp add:kstar_0)
+    by (metis (mono_tags, lifting) SEXP_def dual_order.refl hoare_skip order.trans predicate1I)
+next
+  case (Suc c)
+  then have "\<^bold>{$t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> \<^bold>{$wait \<or> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>c\<guillemotright> \<le> $t\<^bold>}"
+    apply (wlp_full)
+    by (smt (verit, del_insts) antisym le_boolI le_funI predicate1D)
+
+  assume a1:"\<^bold>{$t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> \<^bold>{$wait\<^bold>}"
+  then have "\<^bold>{$t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> ; (T(C) ; EvolveUntil \<delta> a \<sigma>) \<^bold>{$wait\<^bold>}"
+    apply (rule hoare_kcomp)
+    apply (rule hoare_kcomp[where R="($wait)\<^sup>e"])
+    unfolding T_def apply (wlp_full)
+    by (simp add: EvolveUntil_def hoare_T_wait le_funI)
+  then have "\<^bold>{$t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^bsup>Suc c\<^esup> \<^bold>{$wait\<^bold>}"
+    oops
+
+  then show ?case
+  proof (cases "\<^bold>{$t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} (C ; EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> \<^bold>{$wait\<^bold>}")
+  assume ""
+  then show ?case
+    apply (simp; rule hoare_disj_posI)
+    thm hoare_disj_posI
+  (* Apply disjuntion on postcondition, then consider wait/not wait*)
+    sorry
+qed
+
+  (* By induction? *)
+  oops
+lemma 
+  assumes "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright> \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+(\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>) \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>+(\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>) \<^bold>}"
+  using assms 
+  sledgehammer (* I think we need a healthiness condition over P, such that it is insensitive to
+    absolute time of t! *)
+
+lemma 
+  assumes "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<and> timer = 0 \<^bold>} {t` = 1, timer` = 1 | timer \<le> \<guillemotleft>\<delta>\<guillemotright>} \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright> \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+(\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>) \<and> timer = 0\<^bold>} {t` = 1, timer` = 1 | timer \<le> \<guillemotleft>\<delta>\<guillemotright>} \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>+(\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>) \<^bold>}"
+  using assms unfolding TimerEvo_def
+  apply (auto simp add:SEXP_def)
+  oops
+
+lemma bounded_time_lift_kstar_fixed:
+  fixes c::"nat"
+  assumes "0 \<le> \<delta>" "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+proof -
+  have "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<sqinter> skip \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+    apply (rule hoare_choice)
+    using assms apply simp
+    apply (wlp_full)
+    by (simp add: assms(1) mult_left_mono)
+  then have "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+    by (metis kstar_1)
+  then show ?thesis .
+qed
+
+lemma bounded_time_lift_kstar_fixed_leq:
+  fixes c::"nat"
+  assumes "0 \<le> \<delta>" "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+  shows "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+proof -
+  have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<sqinter> skip \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+    apply (rule hoare_choice)
+    using assms apply simp
+    apply (wlp_full)
+    using assms
+    by (smt (verit, best) mult_left_mono)
+  then have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}"
+    by (metis kstar_1)
+  then show ?thesis .
+qed
+
+
+lemma bounded_time_lift_kstar_fixed':
+  fixes c::"nat"
+  assumes "0 \<le> \<delta>" "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real (\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+  shows "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real (\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+proof -
+  have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<sqinter> skip \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real (\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+    apply (rule hoare_choice)
+    using assms apply simp
+    apply (wlp_full)
+    using assms
+    by (smt (verit, ccfv_SIG) mult_left_mono)
+  then have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+    by (metis kstar_1)
+  then show ?thesis .
+qed
+
+lemma bounded_time_lift_kstar_fixed'':
+  fixes c::"nat"
+  assumes "0 \<le> \<delta>" "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>}"
+  shows "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real (\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+proof -
+  have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<sqinter> skip \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real (\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+    apply (rule hoare_stengthen_post[where Q="(t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright>)\<^sup>e"])
+     apply wlp_full
+    using assms apply (smt (verit, ccfv_SIG) mult_left_mono)
+    apply (rule hoare_choice)
+    using assms apply simp
+    by (wlp_full)
+  then have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+    by (metis kstar_1)
+  then show ?thesis .
+qed
+
+(*
+lemma bounded_time_lift_kstar_fixed':
+  fixes c::"nat"
+  assumes "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+  shows "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+proof -
+  have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> \<^bold>} P \<sqinter> skip \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+    apply (rule hoare_choice)
+    using assms apply simp
+    by (wlp_full)
+  then have "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> \<^bold>} P\<^bsup>1\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+    by (metis kstar_1)
+  then show ?thesis .
+qed
+*)
+
+(*
+lemma 
+  assumes "0 \<le> \<delta>" "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+  shows "\<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(\<guillemotleft>c\<guillemotright>+1) \<^bold>}"
+  apply (rule Correctness_Specs.hoare_disj_preI[where a="(True)\<^sup>e" and b="(t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>)\<^sup>e" and c="(t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>)\<^sup>e"])
+    apply simp_all
+  using assms apply simp *)
+
+lemma 
+  assumes "0 \<le> \<delta>" "\<forall>c. \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<^bold>} P \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*(1+real \<guillemotleft>c\<guillemotright>) \<^bold>}" (* Is this assumption satisfied by the intended theorem?*)
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} P\<^bsup>c\<^esup> \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> \<^bold>}"
+proof (induct c)
+  case 0
+  then show ?case
+    unfolding Nondet_choice_def kpower_def kstar_fixed_def
+    apply auto
+    by (simp add:skip_def fbox_def)
+next
+  case (Suc c)
+  then have suc_kstar_seq:"P\<^bsup>Suc c\<^esup> = P\<^bsup>c\<^esup> ; P\<^bsup>1\<^esup>"
+    using kstar_fixed_plus_kcomp
+    by (metis Suc_eq_plus1)
+  have "\<^bold>{t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} P\<^bsup>c\<^esup> ; P\<^bsup>1\<^esup> \<^bold>{t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + (\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>Suc c\<guillemotright>)\<^bold>}"
+   (* apply (rule hoare_kcomp[where R="(t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + (\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>))\<^sup>e"])
+    using Suc apply blast
+  apply (simp only:Nat.Suc_eq_plus1)
+    apply (rule bounded_time_lift_kstar_fixed')
+    using assms apply simp
+    using assms sledgehammer
+    using Suc apply blast
+    using bounded_time_lift_kstar_fixed'*)
+  proof (rule hoare_kcomp[where R="(t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + (\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>))\<^sup>e"], simp_all del:One_nat_def)
+    show "\<^bold>{t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} P\<^bsup>c\<^esup> \<^bold>{t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>c\<guillemotright>\<^bold>}"
+      using Suc by presburger
+    show "\<^bold>{t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>c\<guillemotright>\<^bold>} P\<^bsup>1\<^esup> \<^bold>{t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * (1 + real \<guillemotleft>c\<guillemotright>)\<^bold>}"
+      apply (rule bounded_time_lift_kstar_fixed_leq)
+      using assms by simp+
+  qed
+   (* proof (rule hoare_disj_preI[where a="(True)\<^sup>e" and b="(t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>)\<^sup>e" and c="(t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright>)\<^sup>e"], simp_all del:One_nat_def)
+      show "\<^bold>{t = \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>c\<guillemotright>\<^bold>} P\<^bsup>1\<^esup> \<^bold>{t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * (1 + real \<guillemotleft>c\<guillemotright>)\<^bold>}"
+        thm bounded_time_lift_kstar_fixed
+         apply (rule bounded_time_lift_kstar_fixed)
+        using assms by simp+
+      next
+      show "\<^bold>{t < \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>c\<guillemotright>\<^bold>} P\<^bsup>1\<^esup> \<^bold>{t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * (1 + real \<guillemotleft>c\<guillemotright>)\<^bold>}"
+    (* This won't work. *)
+    using assms 
+    sorry (* FIXME: Need assumption? *)*)
+  (*then have "(\<Sqinter>i\<in>{0..c}. kpower f i) ; (\<Sqinter>i\<in>{0..1}. kpower f i) = "*)
+  then show ?case
+    using Suc suc_kstar_seq by presburger
+qed
+
+lemma 
+  assumes "\<^bold>{ \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> = t \<^bold>} (T(C) ; EvolveUntil \<delta> a \<sigma>) \<^bold>{ Q \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<and> \<not> $wait \<^bold>} (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^sup>+ \<^bold>{ \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*real \<guillemotleft>c\<guillemotright> \<le> t \<longrightarrow> Q \<^bold>}"
+proof -
+  have "((T(C) ; EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> ; (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^sup>+) = (T(C) ; EvolveUntil \<delta> a \<sigma>)\<^sup>+"
+    using kstar_fixed_comp_eq_kstar_one by auto
+
+  thm kstar_fixed_comp_eq_kstar_one
+
+  (* Show that { t = \<guillemotleft>t\<^sub>0\<guillemotright> } (C ; EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> { t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>c\<guillemotright> } 
+     and { Q } C { Q }
+     and { Q } (EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> { Q }
+
+     then use { Q } (EvolveUntil \<delta> a \<sigma>)\<^bsup>c\<^esup> { Q } \<longrightarrow> { Q } (EvolveUntil \<delta> a \<sigma>)\<^sup>+ { Q } 
+  
+     can use cases on wait after postcondition of LHS of composition:
+     * If it is true, then it's the LHS behaviour, otherwise it is the composition.
+   *)
+  thm kstar_fixed_comp_eq_kstar_one
+  oops
+
+lemma
+  assumes "\<^bold>{ I\<^sub>C \<^bold>} (T C ; EvolveUntil tcycle a \<sigma>)\<^bsup>c\<^esup> \<^bold>{ I\<^sub>C \<^bold>}"
+          "\<^bold>{ I\<^sub>C \<^bold>} (T C ; EvolveUntil tcycle a \<sigma>) \<^bold>{ I\<^sub>K \<^bold>}"
+          "\<^bold>{ I\<^sub>K \<^bold>} (T C ; EvolveUntil tcycle a \<sigma>)\<^bsup>k\<^esup> \<^bold>{ I\<^sub>K \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} 
+         (T C ; EvolveUntil tcycle a \<sigma>)\<^bsup>k\<^esup> 
+         \<^bold>{ (\<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>c\<guillemotright> * \<guillemotleft>tcycle\<guillemotright> \<le> t \<and> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>c+k\<guillemotright> * \<guillemotleft>tcycle\<guillemotright> < t) \<longrightarrow> I\<^sub>K\<^bold>}"
+  oops
+
+lemma
+  assumes (*"\<^bold>{  \<^bold>} kpower (T C ; EvolveUntil tcycle a \<sigma>) \<guillemotleft>c\<guillemotright> \<^bold>{ Q \<^bold>}"*) (* ?? *)
+          "\<^bold>{t = \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>c\<guillemotright> * \<guillemotleft>tcycle\<guillemotright> \<and> \<not>wait\<^bold>} (T C ; EvolveUntil tcycle a \<sigma>) \<^bold>{ (\<not>wait) \<longrightarrow> I \<^bold>}"
+          "\<^bold>{ I \<^bold>} (T C ; EvolveUntil tcycle a \<sigma>)\<^bsup>k\<^esup> \<^bold>{ I \<^bold>}"
+          (* \<longrightarrow> \<^bold>{ I\<^sub>R \<^bold>} (T C ; EvolveUntil tcycle a \<sigma>)\<^sup>* \<^bold>{ I\<^sub>R \<^bold>}*)
+  shows "\<^bold>{t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>}
+          (T C ; EvolveUntil tcycle a \<sigma>)\<^sup>+ 
+         \<^bold>{((\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>+(\<guillemotleft>c\<guillemotright>+\<guillemotleft>k\<^sub>1\<guillemotright>)*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^bold>}"
+  oops
+
+lemma
+  fixes c::nat
+  assumes "`t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<longrightarrow> I\<^sub>T`"
+          "`t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<longrightarrow> Q`" (* no obstacle? before *)
+          "a \<bowtie> wait" 
+          "$wait \<sharp> I\<^sub>T" "$timer \<sharp> I\<^sub>T" "vwb_lens a" "t \<bowtie> a" "timer \<bowtie> a"
+          (* P is an invariant before t\<^sub>0+c*tcycle*)
+          "\<^bold>{ P \<and> Q \<^bold>} (T(C) ; EvolveUntil tcycle a \<sigma>) \<^bold>{ P \<^bold>}"
+          (* From this we can deduce that P holds at t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c+1\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>? *)
+          (* At t = t\<^sub>0 we have that I\<^sub>T holds, and between t\<^sub>0 \<le> t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>tcycle\<guillemotright> I\<^sub>R holds *)
+          "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<and> P \<^bold>}
+           (T(C) ; EvolveUntil tcycle a \<sigma>)\<^sup>+
+           \<^bold>{ (t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<longrightarrow> I\<^sub>T) \<and> ((\<guillemotleft>t\<^sub>0\<guillemotright> \<le> t \<and> t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c+1\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>T) \<^bold>}"
+          (* We can probably simplify this:*)
+          "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<and> I\<^sub>T \<^bold>} C \<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright> \<and> I\<^sub>R \<^bold>}" 
+          (* I\<^sub>T is about continuous variables? *)
+          "\<^bold>{ I\<^sub>R \<^bold>} TimerEvo tcycle a \<sigma> (True)\<^sup>e \<^bold>{ I\<^sub>R \<^bold>}"
+          (* P = state = DMoving ... \<and> *)
+  shows "\<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<and> P \<^bold>} 
+         (T(C) ; EvolveUntil tcycle a \<sigma>)\<^sup>+
+         \<^bold>{ (t = (\<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>tcycle\<guillemotright>) \<longrightarrow> I\<^sub>T) 
+            \<and> 
+           (((\<guillemotleft>t\<^sub>0\<guillemotright>+(\<guillemotleft>c\<guillemotright>+\<guillemotleft>k\<^sub>1\<guillemotright>)*\<guillemotleft>tcycle\<guillemotright>) \<le> t \<and> t < (\<guillemotleft>t\<^sub>0\<guillemotright>+(\<guillemotleft>c\<guillemotright>+\<guillemotleft>k\<^sub>1\<guillemotright>+\<guillemotleft>k\<^sub>2\<guillemotright>)*\<guillemotleft>tcycle\<guillemotright>)) \<longrightarrow> I\<^sub>R) \<^bold>}"
+  apply (rule hoare_conj_pos')
+  using assms(1)
+  apply (simp add: fbox_def predicate1I taut_def)
+  thm hoare_conj_pos
+  
   (* We have the ability to tackle the design, rather than just specification. *)
 
   (* Key here is: c*tcycle controls how many times the loop gets unfolded, so need
@@ -784,7 +1170,121 @@ lemma EvolveUntil_TimerEvo:
   apply (rule hoare_if_then_else)
   using assms apply wlp_full
   by wlp_full
-  
+
+lemma kpower_from_wait:
+  assumes "`P \<longrightarrow> wait`"
+  shows "\<^bold>{P\<^bold>} kpower (T X) k \<^bold>{\<not> wait \<longrightarrow> Q\<^bold>}"
+proof (induct k)
+  case 0
+  then show ?case
+    using assms kpower_0
+    by (metis (mono_tags, lifting) SEXP_def fbox_kpower_0 predicate1I taut_def)
+next
+  case (Suc k)
+  have p:"kpower (T X) (Suc k) = (T X) ; kpower (T X) k"
+    using kpower_Suc by blast
+  show ?case
+    apply (simp only:p)
+    apply (rule hoare_kcomp[where R="(P)\<^sup>e"])
+    using assms
+    apply (metis (mono_tags, lifting) SEXP_def hoare_T_wait predicate1I taut_def)
+    using Suc by blast
+qed
+
+lemma kpower_decompose:
+  assumes "k > 1" "\<^bold>{ P \<^bold>} X \<^bold>{ Q \<^bold>}" "\<^bold>{ Q \<^bold>} kpower X (k-1) \<^bold>{ R \<^bold>}"
+  shows "\<^bold>{ P \<^bold>} kpower X k \<^bold>{ R \<^bold>}"
+proof -
+  from assms obtain c where c:"k = 1 + c"
+    using less_imp_add_positive by blast
+  then have "kpower X k = kpower X (1 + c)"
+    by auto
+  also have "... = X ; kpower X c"
+    using kpower_kcomp_sum
+    by (simp add: kpower_Suc)
+  then show "\<^bold>{ P \<^bold>} kpower X k \<^bold>{ R \<^bold>}"
+    using c apply (simp)
+    apply (rule hoare_kcomp[where R="Q"])
+    using assms apply blast
+    using assms(3) by auto
+qed
+
+lemma kpower_cyclic:
+  assumes "\<forall>t\<^sub>0. \<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} X \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright> \<^bold>}"
+  shows "\<^bold>{ P \<and> t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} kpower X k \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>k\<guillemotright> \<^bold>}"
+proof (induct k arbitrary:t\<^sub>0 P)
+  case 0
+  then show ?case
+    using assms
+    by (smt (verit, ccfv_threshold) SEXP_def fbox_kpower_0 mult_eq_0_iff of_nat_0 predicate1I taut_def)
+next
+  case (Suc k)
+  then have noP:"\<And>t\<^sub>1. \<^bold>{$t = \<guillemotleft>t\<^sub>1\<guillemotright>\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>1\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright>\<^bold>}"
+    by (simp add: SEXP_def le_fun_def)
+  have SucP:"\<^bold>{P \<and> t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * \<guillemotleft>k\<guillemotright>\<^bold>}"
+    using assms(1)
+    by (simp add: Suc)
+  have p:"kpower X (Suc k) = X ; kpower X k"
+    using kpower_Suc by blast
+  show ?case
+  proof (simp only:p, rule hoare_kcomp[where R="($t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>)\<^sup>e"])
+    show "\<^bold>{P \<and> $t = \<guillemotleft>t\<^sub>0\<guillemotright>\<^bold>} X \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>\<^bold>}"
+      using assms by fastforce
+  next
+    show "\<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real (Suc \<guillemotleft>k\<guillemotright>)\<^bold>}"
+    proof (rule hoare_post_eq[where R="(t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> *\<guillemotleft>k\<guillemotright>)\<^sup>e"])
+      show " (\<lambda>\<s>. get\<^bsub>t\<^esub> \<s> \<le> t\<^sub>0 + \<delta> + \<delta> * real k) = (\<lambda>\<s>. get\<^bsub>t\<^esub> \<s> \<le> t\<^sub>0 + \<delta> * real (Suc k))"
+        by (simp add: add.assoc distrib_left)
+    next
+      show "\<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright>\<^bold>}"
+      (* Case split *)
+      proof (rule hoare_disj_preI[where a="(True)\<^sup>e" and b="($t = \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>)\<^sup>e" and c="($t < \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>)\<^sup>e"], simp_all)
+        show "(\<lambda>\<s>. get\<^bsub>t\<^esub> \<s> \<le> t\<^sub>0 + \<delta>) = ($t = \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> \<or> $t < \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>)\<^sub>e"
+          by expr_auto
+      next
+        show "\<^bold>{$t = \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright>\<^bold>}"
+          by (simp add: noP)
+      next
+        show "\<^bold>{$t < \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright>\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright>\<^bold>}"
+        proof -
+           have "\<forall>c. \<^bold>{$t = \<guillemotleft>t\<^sub>0 + \<delta> - c\<guillemotright> \<and> \<guillemotleft>c\<guillemotright> > 0\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0 + \<delta> - c\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright> \<and> \<guillemotleft>c\<guillemotright> > 0\<^bold>}"
+            using Suc noP apply expr_auto
+            by blast
+          then have pp:"\<forall>c. \<^bold>{$t = \<guillemotleft>t\<^sub>0 + \<delta> - c\<guillemotright> \<and> \<guillemotleft>c\<guillemotright> > 0\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0 + \<delta>\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright>\<^bold>}"
+            apply expr_auto
+            by (smt (verit) fbox_def le_bool_def le_fun_def)
+          then have pp:"\<^bold>{\<exists>c. $t = \<guillemotleft>t\<^sub>0 + \<delta> - c\<guillemotright> \<and> \<guillemotleft>c\<guillemotright> > 0\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0 + \<delta>\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright>\<^bold>}"
+            by (expr_auto)
+          then have pp:"\<^bold>{$t < \<guillemotleft>t\<^sub>0 + \<delta>\<guillemotright>\<^bold>} kpower X k \<^bold>{$t \<le> \<guillemotleft>t\<^sub>0 + \<delta>\<guillemotright> + \<guillemotleft>\<delta>\<guillemotright> * real \<guillemotleft>k\<guillemotright>\<^bold>}"
+            apply expr_auto
+            by (smt (verit, best) predicate1D)
+          then show ?thesis
+            by auto
+        qed
+      qed
+    qed
+  qed
+qed
+
+lemma kpower_cyclic':
+  assumes "\<forall>t\<^sub>0. \<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} X \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright> \<^bold>}" "`P \<longrightarrow> t = \<guillemotleft>t\<^sub>0\<guillemotright>`"
+  shows "\<^bold>{ P \<^bold>} kpower X k \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>k\<guillemotright> \<^bold>}"
+  apply (rule hoare_weaken_pre_conj[where P="(P \<and> t = \<guillemotleft>t\<^sub>0\<guillemotright>)\<^sup>e"])
+  using assms apply expr_auto
+  using assms by (simp add:kpower_cyclic)
+
+lemma
+  assumes "`P \<longrightarrow> t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>\<delta>\<guillemotright>`"
+        "\<^bold>{ Q \<^bold>} X \<^bold>{ Q \<^bold>}" "\<forall>t\<^sub>0. \<^bold>{ t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} X \<^bold>{ t \<le> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>\<delta>\<guillemotright> \<^bold>}"
+        "\<^bold>{ P \<^bold>} kpower X k \<^bold>{ (\<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> + (\<guillemotleft>c\<guillemotright>+1)*\<guillemotleft>\<delta>\<guillemotright> \<le> t \<and> t < \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> + (\<guillemotleft>c\<guillemotright>+\<guillemotleft>k\<guillemotright>)*\<guillemotleft>\<delta>\<guillemotright>) \<longrightarrow> Q \<^bold>}"
+      shows "\<^bold>{ P \<^bold>} X\<^sup>+ \<^bold>{ (\<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> + (\<guillemotleft>c\<guillemotright>+1)*\<guillemotleft>\<delta>\<guillemotright> \<le> t \<and> t < \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> + (\<guillemotleft>c\<guillemotright>+\<guillemotleft>k\<guillemotright>)*\<guillemotleft>\<delta>\<guillemotright>) \<longrightarrow> Q  \<^bold>}"
+proof -
+  have "\<^bold>{ P \<^bold>} kpower X k \<^bold>{ t \<le> (\<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>c\<guillemotright>*\<guillemotleft>\<delta>\<guillemotright>)+\<guillemotleft>\<delta>\<guillemotright>*\<guillemotleft>k\<guillemotright> \<^bold>}"
+    using assms kpower_cyclic'
+    by blast
+  have "X\<^sup>+ = X\<^bsup>k\<^esup> ; X\<^sup>+"
+    by (simp add: kstar_fixed_comp_eq_kstar_one)
+
 end
 
 term "[\<leadsto>] \<circ>\<^sub>s \<sigma>(x \<leadsto> u, x \<leadsto> v)"
@@ -798,24 +1298,71 @@ term "(subst_upd [\<leadsto>] x (e)\<^sub>e)"
 context robosim
 begin
 
+text \<open> To show that P is an invariant when X executed up to 'k' times from
+ a state where F 0 holds, where 'k' is bounded by a constant 'e', it suffices to show the following? \<close>
+
+lemma 
+  assumes "k < e" "n < e/k" "\<^bold>{P \<and> F \<guillemotleft>n\<guillemotright>\<^bold>} X \<^bold>{P \<and> (F \<guillemotleft>n\<guillemotright> \<or> F (\<guillemotleft>n\<guillemotright> + 1))\<^bold>}"
+  shows "\<^bold>{P \<and> F 0\<^bold>} X\<^bsup>k\<^esup> \<^bold>{ P \<^bold>}"
+  using assms(2,3) 
+proof(induct k arbitrary:n)
+  case 0
+  then show ?case sorry
+next
+  case (Suc k)
+  then show ?case sorry
+qed
+
+
 (* abbreviation (input) "TimerEvo \<delta> a \<sigma> B \<equiv> g_dl_ode_frame a \<sigma> (@B \<and> $timer \<le> \<delta>)\<^sub>e" *)
-
-end
-
-method hoare_help uses add = ( 
+method hoare_help_rs uses add = ( 
     (
-      (simp only:kcomp_assoc)?, 
+      (simp only:kcomp_assoc kcomp_skip)?, 
       (   (rule hoare_else_kcomp, force) 
         | (rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)
         | (rule hoare_if_kcomp, force) 
         | (rule hoare_ifte_kcomp)
         | (rule hoare_pre_not_while_seq, simp, hoare_wp_auto)
         | (rule hoare_pre_not_while, simp, hoare_wp_auto)
-        | (simp only:kcomp_skip)
+        | (rule hoare_if_then_cond, simp)
+        | (rule EvoleUntil_wait_skip, simp)
+        | (rule hoare_skip_conjI, simp)
+        | (rule hoare_skip)
+        | (simp_all only:kcomp_skip)
+        | (rule hoare_if_then_else, simp)
+        | (rule hoare_false, subst_eval)
+        | (rule hoare_kcomp_if_then_else_any)
+        | ((rule hoare_kcomp_assign_unrest), simp add: expr_simps, simp add:expr_simps)
+        | (simp add:unrest usubst expr_simps add)
+        (*| (rule hoare_inv_post, expr_simp, (dInduct | (rule nmods_invariant, (clarify intro!:closure, subst_eval))))*) (* Attempt to use postcondition as invariant *)
+        | (rule hoare_inv_post, expr_simp, dInduct_mega)
+        | (rule nmods_invariant, (clarify intro!:closure, subst_eval))
+        | (dInduct_mega)
+       )
+     )+, 
+   (subst WHILE_unroll_IF[symmetric])?
+  )+,(tactic distinct_subgoals_tac)?
+
+end
+
+method hoare_help uses add = ( 
+    (
+      (simp only:kcomp_assoc kcomp_skip)?, 
+      (   (rule hoare_else_kcomp, force) 
+        | (rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest)
+        | (rule hoare_if_kcomp, force) 
+        | (rule hoare_ifte_kcomp)
+        | (rule hoare_pre_not_while_seq, simp, hoare_wp_auto)
+        | (rule hoare_pre_not_while, simp, hoare_wp_auto)
+        | (rule hoare_if_then_cond, simp)
+        | (simp_all only:kcomp_skip)
         | (dInduct_mega)
         | (rule nmods_invariant, (clarify intro!:closure, subst_eval))
         | (rule hoare_false, subst_eval)
+        | (rule hoare_kcomp_if_then_else_any)
+        | ((rule hoare_kcomp_assign_unrest), simp add: expr_simps, simp add:expr_simps)
         | (simp add:unrest usubst expr_simps add)
+        | (rule hoare_inv_post, expr_simp, (dInduct | (rule nmods_invariant, (clarify intro!:closure, subst_eval)))) (* Attempt to use postcondition as invariant *)
        )
      )+, 
    (subst WHILE_unroll_IF[symmetric])?

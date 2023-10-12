@@ -25,6 +25,11 @@ lemma fdia_skip: "|skip\<rangle> P = P"
 lemma hoare_skip: "\<^bold>{P\<^bold>} skip \<^bold>{P\<^bold>}"
   by (auto simp: fbox_skip)
 
+lemma hoare_skip_conjI: 
+  assumes "`P \<longrightarrow> Q`"
+  shows "\<^bold>{P\<^bold>} skip \<^bold>{Q\<^bold>}"
+  using assms
+  by (metis SEXP_def fbox_skip refine_iff_implies)
 
 subsection \<open> Abort \<close>
 
@@ -289,6 +294,16 @@ lemma hoare_floyd_kcomp:
   using assms(1) apply simp
   using assms(2) by blast
 
+thm hoare_weaken_pre_conj
+thm H_assign_floyd_hoare
+thm hoare_assign
+
+lemma
+  assumes "vwb_lens x" "$x \<sharp> e"
+  shows "\<^bold>{P\<^bold>} x ::= e \<^bold>{(\<exists>v . P\<lbrakk>\<guillemotleft>v\<guillemotright>/x\<rbrakk>) \<and> $x = e\<^bold>}"
+  using assms apply (simp add:wlp, expr_auto)
+  by (metis vwb_lens.put_eq)
+  
 lemma hoare_kcomp_bracket:
   assumes "\<^bold>{P\<^bold>} F ; (G ; H) \<^bold>{Q\<^bold>}"
   shows "\<^bold>{P\<^bold>} (F ; G) ; H \<^bold>{Q\<^bold>}"
@@ -379,6 +394,49 @@ lemma hoare_else_kcomp:
   shows "\<^bold>{P\<^bold>} (IF T THEN X ELSE Y) ; Z \<^bold>{Q\<^bold>}"
   using assms 
   by (smt (verit, del_insts) SEXP_def fbox_if_then_else fbox_kcomp predicate1D predicate1I taut_def)
+
+lemma hoare_kcomp_if_then_else_any:
+  assumes "\<^bold>{P\<^bold>} X ; Y \<^bold>{Q\<^bold>}" "\<^bold>{P\<^bold>} X ; Z \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} X ; (IF T THEN Y ELSE Z) \<^bold>{Q\<^bold>}"
+  using assms
+  unfolding kcomp_def ifthenelse_def SEXP_def 
+  apply (auto)
+  by (smt (verit, ccfv_SIG) UN_iff comp_apply fbox_kcomp fbox_def predicate1D)
+
+lemma hoare_inv_post:
+  assumes "`P \<longrightarrow> I`" "\<^bold>{I\<^bold>} X \<^bold>{I\<^bold>}"
+  shows "\<^bold>{P\<^bold>} X \<^bold>{I\<^bold>}"
+  using assms(1) assms(2) hoare_weaken_pre_conj by blast
+
+thm H_assign_floyd_hoare
+
+lemma hoare_kcomp_if_then_assign:
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{T \<and> Q\<lbrakk>e/x\<rbrakk>\<^bold>}" 
+          "\<^bold>{Q\<lbrakk>e/x\<rbrakk>\<^bold>} x ::= e \<^bold>{ Q \<^bold>}"
+          (*"`(\<exists>v. Q\<lbrakk>v/x\<rbrakk> \<and> $x = e\<lbrakk>v/x\<rbrakk>) \<longrightarrow> Q`"*)
+  shows "\<^bold>{P\<^bold>} X ; (IF T THEN x ::= e ELSE Z) \<^bold>{Q\<^bold>}"
+  apply (rule hoare_kcomp[where R="(T \<and> Q\<lbrakk>e/x\<rbrakk>)\<^sup>e"])
+  using assms apply simp
+  apply (rule hoare_if_then_cond)
+  thm hoare_if_then_cond
+  using assms 
+   apply simp
+  using assms
+  by (smt (z3) SEXP_def dual_order.trans le_boolI le_funI lens.select_convs(1))
+
+lemma hoare_kcomp_assign_unrest:
+  assumes "vwb_lens x" "$x \<sharp> Q" "\<^bold>{P\<^bold>} X \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} X ; x ::= e \<^bold>{Q\<^bold>}"
+  using assms
+  by (metis SEXP_def fbox_assigns fbox_kcomp subst_id_apply subst_unrest)
+
+lemma hoare_kcomp_if_then_else':
+  assumes "\<^bold>{P\<^bold>} X \<^bold>{T\<^bold>}" "\<^bold>{T\<^bold>} Y \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} X ; (IF T THEN Y ELSE Z) \<^bold>{Q\<^bold>}"
+  using assms
+  unfolding kcomp_def ifthenelse_def SEXP_def 
+  apply auto
+  by (smt (verit, ccfv_threshold) UN_iff comp_apply fbox_def predicate1D)
 
 subsection \<open> N iterations \<close>
 

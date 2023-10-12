@@ -205,6 +205,12 @@ lemma hoare_weaken_pre_conj:
   using assms
   by (simp add: refine_iff_implies taut_def)
 
+lemma hoare_strengthen_post:
+  assumes "`Q \<longrightarrow> R`" "\<^bold>{P\<^bold>} X \<^bold>{Q\<^bold>}" 
+  shows "\<^bold>{P\<^bold>} X \<^bold>{R\<^bold>}"
+  using assms
+  by (metis fbox_iso order_trans refine_iff_implies)
+
 lemma hoare_false:
   shows "\<^bold>{False\<^bold>} X \<^bold>{R\<^bold>}"
   by auto
