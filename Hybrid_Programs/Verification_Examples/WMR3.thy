@@ -250,71 +250,10 @@ lemma SimSMovement_DMoving_no_exe_obstacle_spec:
    \<^bold>{state = DMovingJunction \<and> \<not> executing\<^bold>}"
   by hoare_wp_auto
 
-(*lemma
-  "\<^bold>{state = DMoving \<and> executing \<and> \<not> obstacle\<^bold>}
-   SimSMovement ; SimSMovement ; SimSMovement
-   \<^bold>{state = DMoving \<and> \<not> executing \<and> \<not> obstacle\<^bold>}"
-   by hoare_wp_auto*)
-
 lemma SimSMovement_obs_executing':
   "\<^bold>{\<not> obstacle \<and> state = DMovingJunction \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>} 
     SimSMovement
    \<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>}"
-  by hoare_wp_auto
-
-lemma SimSMovement_DMoving_IF_executing:
-  "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>} 
-    SimSMovement ; IF executing THEN SimSMovement ELSE skip
-   \<^bold>{\<not> obstacle \<and> state = DMovingJunction \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>}"
-  by hoare_wp_auto
-
-lemma SimSMovement_DMoving_executing_need:
-  "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>} 
-    SimSMovement
-   \<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> \<not> executing\<^bold>}"
-  by hoare_wp_auto
-
-lemma SimSMovement_obs_executing_need:
-  "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> \<not> executing\<^bold>} 
-    DO SimSMovement WHILE executing
-   \<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> \<not> executing\<^bold>}"
-proof -
-  have decomp:
-      "SimSMovement ; (WHILE executing DO SimSMovement) 
-       =
-       SimSMovement ; IF executing THEN SimSMovement ELSE skip ; (WHILE executing DO SimSMovement)
-      "
-      using WHILE_unroll_IF SimSMovement_DMoving_IF_executing
-      by (metis kcomp_assoc)
-
-    have a:"\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> \<not> executing\<^bold>} 
-          SimSMovement ; IF executing THEN SimSMovement ELSE skip
-          \<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>}"
-      by hoare_wp_auto
-
-    have "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>} 
-          SimSMovement 
-        \<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS\<^bold>}"
-      by hoare_wp_auto
-    then have "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS\<^bold>}
-          (WHILE executing DO SimSMovement) 
-          \<^bold>{\<not> executing \<and> \<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS\<^bold>}"
-      by (simp add: hoare_while)
-    then have b:"\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>}
-          (WHILE executing DO SimSMovement) 
-          \<^bold>{\<not> executing \<and> \<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS\<^bold>}"
-      using SEXP_def predicate1D by auto
-
-    from a b show ?thesis 
-      by (smt (verit, ccfv_threshold) SEXP_def decomp fbox_def hoare_kcomp le_fun_def)
-  (* This is not an invariant of WHILE _ DO _, but of DO _ WHILE _.
-     Proving it relies on being able to unroll the WHILE. *)
-qed
-
-lemma SimSMovement_obs_not_executing_from_DMoving:
-  "\<^bold>{\<not> obstacle \<and> state = DMoving \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> \<not> executing\<^bold>} 
-    SimSMovement
-   \<^bold>{\<not> obstacle \<and> state \<noteq> STurning \<and> avLW = LV / RADIUS \<and> avRW = LV / RADIUS \<and> executing\<^bold>}"
   by hoare_wp_auto
 
 lemma simS4: "\<^bold>{True\<^bold>} (timer ::= y) \<^bold>{timer = y\<^bold>}"
@@ -333,27 +272,6 @@ definition "Ctrl \<equiv> SendToSoftware ; executing ::= True ; WHILE executing 
 lemma SendToSoftware_spec:
   "\<^bold>{IRVoltage < 3\<^bold>} SendToSoftware \<^bold>{ \<not> obstacle \<^bold>}"
   by (hoare_wp_auto)
-
-lemma Ctrl_DMoving_inv:
-  "\<^bold>{IRVoltage < 3 \<and> state = DMovingJunction \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS\<^bold>}
-   Ctrl
-   \<^bold>{\<not> obstacle \<and> state = DMovingJunction \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS\<^bold>}"
-  unfolding Ctrl_def
-   apply (rule hoare_kcomp[where R="(\<not> obstacle \<and> state = DMovingJunction \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS )\<^sup>e"])
-   apply (hoare_wp_simp)
-  using SimSMovement_obs_executing_need by metis 
-
-lemma SimSMovement_Initial_to_DMoving:
-  "\<^bold>{executing \<and> state = Initial\<^bold>} 
-   DO SimSMovement WHILE executing
-   \<^bold>{\<not> executing \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS\<^bold>}"
-  apply (rule hoare_kcomp[where R="(executing \<and> state = SMoving)\<^sup>e"], hoare_wp_simp)
-  apply (rule hoare_while_unroll_kcomp[where Q="(state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> executing)\<^sup>e"])
-   apply (hoare_wp_simp)
-  apply (rule hoare_while_unroll_kcomp[where Q="(state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS)\<^sup>e"])
-   apply (hoare_wp_simp)
-  apply (rule hoare_while)
-  by (hoare_wp_simp)
 
 lemma SimSMovement_DMoving_to_Waiting:
   "\<^bold>{executing \<and> state = Initial \<and> obstacle \<and> \<not>executing\<^bold>} 
@@ -477,6 +395,7 @@ lemma Evo_at_rest:
    \<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * cos(yw) \<and> my = my\<^sub>i + (t-(t\<^sub>0+\<epsilon>\<^sub>s))*LV * sin(yw) \<^bold>}"
   unfolding Ctrl_def (* apply (rule cycle_loop) *)
   thm cycle_loop
+  oops
 
 (* Q: What shape of properties do we need to handle?
 
@@ -550,33 +469,6 @@ lemma "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i \
        \<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i \<^bold>}"
   unfolding DInit_def
   by (hoare_wp_auto)
-(*
-lemma "\<^bold>{ \<^bold>} CInit \<^bold>{ \<^bold>}"
-
-text \<open> In the first case, we show that if no obstacles => only linear behaviour relevant. \<close>
-
-lemma PSE_no_yaw_change: "\<^bold>{avRW = avLW \<and> yw = yw\<^sub>0\<^bold>} PSEvolution \<^bold>{avRW = avLW \<and> yw = yw\<^sub>0\<^bold>}"
-  by (dInduct_mega)
-
-lemma PSE_linear_motion:
-  "\<^bold>{avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}
-    PSEvolution
-   \<^bold>{avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> yw = yw\<^sub>0 \<and> mx = mx\<^sub>i + t*LV * cos(yw) \<and> my = my\<^sub>i + t*LV * sin(yw)\<^bold>}"
-  apply (dInduct_mega)
-  using non_zeros apply blast
-  apply (dInduct_mega)
-  using non_zeros by blast
-
-text \<open> Below the angular version. Note that AV is clockwise, ie. a positive velocity spins clockwise,
-       whereas yaw is measured anti-clockwise, so a positive velocity decreases the angle. \<close>
-
-lemma PSE_angular_motion:
-  "\<^bold>{avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and> yw = yw\<^sub>0 - timer*AV \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i\<^bold>}
-    PSEvolution
-   \<^bold>{avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and> yw = yw\<^sub>0 - timer*AV \<and> mx = mx\<^sub>i \<and> my = my\<^sub>i\<^bold>}"
-  apply (dInduct_mega)
-  using non_zeros apply force+
-  by (dInduct_mega) *)
 
 end
 
@@ -694,7 +586,6 @@ lemma Evo_turning:
    apply (hoare_help)
   apply (simp only:kcomp_assoc[symmetric] T_def[symmetric] TimerEvo_def[symmetric] EvolveUntil_def[symmetric])
   thm EvolveUntil_def
-  apply (simp only:EvolveUntil_def[symmetric])
   (* Need to transfer result from P\<^sup>+ over any cycle 'c' into one about
      a particular cycle, or, range of time... where the property is 
      invariant over that time.
@@ -733,25 +624,7 @@ next
     using Suc apply blast
     apply expr_auto
     by (simp_all add: distrib_left)
-  (*
-  have a:"kpower (T X) (Suc k) = kpower (T X) k ; (T X)"
-    using kpower_Suc' by blast
-  show ?case
-    apply (simp only:a)
-    apply (rule hoare_kcomp[where R="(\<not> $wait \<longrightarrow> $t = t\<^sub>1 + c)\<^sup>e"])
-*)
-  (*
-    apply (rule hoare_kcomp[where R="(\<not> $wait \<longrightarrow> $t = t\<^sub>1 + c * real k)\<^sup>e"])
-    using Suc apply blast
-    thm hoare_disj_preI
-    apply (rule hoare_disj_preI[where a="(True)\<^sup>e" and b="(\<not> $wait \<and> $t = t\<^sub>1 + c * real k)\<^sup>e" and c="($wait)\<^sup>e"], simp)
-      defer
-      apply (smt (verit) SEXP_def hoare_T_wait predicate1I tautI)
-    apply expr_auto
-    using Suc sledgehammer*)
 qed
-
-
 
 lemma
   assumes (* I is invariant over 'k' iterations, 
@@ -761,33 +634,6 @@ lemma
              FIXME: introduce a definition for this? *)
           "\<^bold>{ \<not>$wait \<and> t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} T(X) \<^bold>{ \<not>wait \<longrightarrow> t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright> \<^bold>}"
     shows "\<^bold>{P\<^bold>} (T(X))\<^sup>+ \<^bold>{ (\<guillemotleft>t\<^sub>0\<guillemotright> \<le> t \<and> t < \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>k\<guillemotright>*\<guillemotleft>c\<guillemotright>) \<longrightarrow> I \<^bold>}"
-  using assms 
-proof(induct k)
-  case 0
-  then show ?case sorry
-next
-  case (Suc k)
-  then have "\<^bold>{P \<and> I\<^bold>} (T X)\<^bsup>k\<^esup> \<^bold>{I\<^bold>}"
-    by (metis SEXP_def fbox_def predicate1I)
-  then have "\<^bold>{P\<^bold>} (T X)\<^sup>+ \<^bold>{t\<^sub>0 \<le> $t \<and> $t < t\<^sub>0 + real k * c \<longrightarrow> I\<^bold>}"
-    using Suc.hyps assms(2) by blast
-  then show ?case
-    using Suc (* Need proof that kpower T(X) k yields t = t\<^sub>0 + c*k,
-      then knowing that kpower T(X) k is in (T X)\<^bsup>k\<^esup>, and that I
-      holds everywhere, then it also holds when t < t\<^sub>0 + k*c.
-
-      By a similar argument, so does kpower T(X) (k+1) ?
-
-      Perhaps no need for proof by induction. *)
-    sorry
-qed
-  have "(T(X))\<^sup>+ = (T(X))\<^bsup>k\<^esup> ; (T(X))\<^sup>+"
-    by (simp add: kstar_fixed_comp_eq_kstar_one)
-  (* Sketch: find the decomposition of k + ... iterations, prove that
-             I holds within 'k', and show that after 'k',
-             then t \<ge> \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>k\<guillemotright>*\<guillemotleft>c\<guillemotright>, so 'I' no longer needs to apply.
-
-             This is not the case for \<^bsup>k\<^esup> *)
   oops
 
 lemma
@@ -798,34 +644,6 @@ lemma
   apply (hoare_help)
   using non_zeros(1) non_zeros(2) apply force+
   by (hoare_help)
-
-lemma
-  "\<^bold>{ executing \<and> state = DTurning \<^bold>}
-    Ctrl
-   \<^bold>{ \<not>executing \<and> state = DTurning \<^bold>}"
-  unfolding Ctrl_def SendToSoftware_def SimSMovement_def
-  by (hoare_help)
-
-lemma
-  "\<^bold>{ executing \<and> state = DTurningJunction \<and> MBC < pi/AV \<^bold>}
-    Ctrl
-   \<^bold>{ \<not>executing \<and> state = DTurning \<^bold>}"
-  unfolding Ctrl_def SendToSoftware_def SimSMovement_def
-  by hoare_help
-
-lemma
-  "\<^bold>{ \<not>executing \<and> state = DTurning \<and> MBC < pi/AV \<^bold>}
-    Ctrl
-   \<^bold>{ \<not>executing \<and> state = DTurning \<^bold>}"
-  unfolding Ctrl_def SendToSoftware_def SimSMovement_def
-  by hoare_help
-
-lemma
-  "\<^bold>{ \<not>executing \<and> state = DTurning \<and> MBC \<ge> pi/AV \<^bold>}
-    Ctrl
-   \<^bold>{ \<not>executing \<and> state = DMoving \<^bold>}"
-  unfolding Ctrl_def SendToSoftware_def SimSMovement_def
-  by hoare_help   
 
 lemma
   fixes c :: nat
@@ -1043,102 +861,5 @@ unfolding kstar_one_def T_def Ctrl_def (*EvolveUntil_def TimerEvo_def T_def*)
         apply (hoare_help_rs ; hoare_help_rs?)+
         using non_zeros(1) non_zeros(2) apply linarith+
         by (hoare_help_rs) 
-lemma
-  assumes  "AV > 0"
-  shows
-  "\<^bold>{ MBC = 0 \<and> \<not>executing \<and> state = DTurning \<and>
-       avLW = AV*axisLength/(2*RADIUS) \<and>
-       avRW = -AV*axisLength/(2*RADIUS) \<and>
-       yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}
-   (T(Ctrl) ; Step (TimeScale*Cycle))
-   \<^bold>{ MBC = Cycle \<and> \<not>executing \<and> state = DTurning \<and>
-      avLW = AV*axisLength/(2*RADIUS) \<and>
-      avRW = -AV*axisLength/(2*RADIUS) \<and>
-      yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}"
-  unfolding kstar_one_def T_def Ctrl_def (*EvolveUntil_def TimerEvo_def T_def*)
-  apply (hoare_help_rs)
-  thm SimSMovement_def
-     defer
-     apply (hoare_help_rs)
-  using assms divide_pos_pos pi_gt_zero apply fastforce
-          defer
-       apply (simp_all)
-       apply fastforce
-      apply (hoare_help_rs)
-       defer
-       apply (simp_all)
-          apply (hoare_help_rs)
-        using assms divide_pos_pos pi_gt_zero apply fastforce
-         defer
-         apply force
-            apply (hoare_help_rs)
-        (*apply (tactic distinct_subgoals_tac)*)
-        unfolding EvolveUntil_def T_def TimerEvo_def
-        thm hoare_if_then_else
-        apply (hoare_help_rs ; hoare_help_rs?)+
-        using non_zeros(1) non_zeros(2) apply linarith+
-        by (hoare_help_rs)        
-
-
-lemma
-  assumes "AV > 0" "(Cycle*k) < (pi/AV)"
-  shows
-  "\<^bold>{  \<not>executing \<and> MBC = 0 \<and> state = DTurning \<and>
-       avLW = AV*axisLength/(2*RADIUS) \<and>
-       avRW = -AV*axisLength/(2*RADIUS) \<and>
-       yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}
-   (T(Ctrl) ; Step (TimeScale*Cycle))\<^bsup>k\<^esup>
-   \<^bold>{ \<not>executing \<and> state = DTurning \<and>
-      avLW = AV*axisLength/(2*RADIUS) \<and>
-      avRW = -AV*axisLength/(2*RADIUS) \<and>
-      yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}"
-  unfolding kstar_one_def T_def Ctrl_def (*EvolveUntil_def TimerEvo_def T_def*)
-  apply ((simp only:kcomp_assoc kcomp_skip)?, (rule hoare_ifte_kcomp))
-  apply (simp add:unrest usubst expr_simps)
-   apply ((simp only:kcomp_assoc kcomp_skip)?, (rule hoare_ifte_kcomp))
-  
-    apply ((simp only:kcomp_assoc kcomp_skip)?, (rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest))
-    apply ((simp only:kcomp_assoc kcomp_skip)?, (rule hoare_ifte_kcomp))
-  thm hoare_floyd_kcomp
-     apply ((simp only:kcomp_assoc kcomp_skip)?, (rule hoare_floyd_kcomp, simp, simp), (unrest))
-                                                                                                   
-    apply ((simp only:kcomp_assoc kcomp_skip)?, (rule hoare_floyd_kcomp, simp, simp add: usubst_eval usubst unrest))
-  apply ((simp only:kcomp_assoc kcomp_skip)?, (rule hoare_ifte_kcomp))
-  apply (hoare_help_rs)
-  defer
-        apply (simp_all)
-        apply (hoare_help_rs)
-  defer
-        apply (simp_all)
-        apply (hoare_help_rs)
-  apply (simp_all)
-lemma
-  "\<^bold>{ \<not>executing \<and> state = DTurning \<and>
-       MBC = k \<and>
-       avLW = AV*axisLength/(2*RADIUS) \<and>
-       avRW = -AV*axisLength/(2*RADIUS) \<and>
-       yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}
-   (T(Ctrl) ; Step (TimeScale*Cycle))\<^sup>+
-   \<^bold>{ MBC < (pi/AV) \<longrightarrow> (\<not>executing \<and> state = DTurning \<and>
-      avLW = AV*axisLength/(2*RADIUS) \<and>
-      avRW = -AV*axisLength/(2*RADIUS) \<and>
-      yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0) \<^bold>}"
-  unfolding kstar_one_def T_def Ctrl_def EvolveUntil_def
-  apply (hoare_help)
-  apply (rule hoare_kcomp[where R="(\<not>executing \<and> state = DTurning \<and> MBC \<le> (pi/AV) \<and> avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and>
-      yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0)\<^sup>e"])
-  unfolding T_def Ctrl_def EvolveUntil_def
-  apply (hoare_help)
-  thm hoare_kcomp
-(* Question: can we use this to prove a more general property about continuous angular movement?
-             ie. one that states that the system keeps rotating between cycles so long as the
-                 voltage at each such cycles is maintained. *)
-
-
-theorem 
-  "\<^bold>{ yw = yw\<^sub>0 \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0 \<^bold>}
-   System
-   \<^bold>{ yw = yw\<^sub>f \<and> mx = mx\<^sub>f \<and> my = my\<^sub>f \<^bold>}"
-  oops
-
+      
 end

@@ -460,7 +460,7 @@ proof -
     "\<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}
      (IF timer \<ge> TimeScale*Cycle THEN Ctrl ELSE skip)
      \<^bold>{IRVoltage < 3 \<and> state = DMoving \<and> avLW = LV/RADIUS \<and> avRW = LV/RADIUS \<and> \<not> executing\<^bold>}"
-    apply (rule hoare_if_then_else)
+    apply (rule_tac hoare_if_then_else)
     by (rule hoare_skip)
   then show ?thesis .
   (* Not sure whether this is sufficiently strong as an invariant *)
