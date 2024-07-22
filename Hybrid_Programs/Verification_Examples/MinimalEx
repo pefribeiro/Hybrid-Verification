@@ -1,0 +1,18 @@
+theory MinimalEx
+
+imports 
+  "Hybrid-Verification.Hybrid_Verification"
+begin
+
+expr_vars
+
+dataspace robosim = 
+  variables
+    timer :: real
+
+context robosim
+begin
+
+end
+
+end

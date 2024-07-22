@@ -1,4 +1,4 @@
-theory WMR3
+theory WMR31
 
 imports 
   "Hybrid-Verification.Hybrid_Verification"
@@ -703,7 +703,7 @@ lemma Evo_turning:
      particular constant? Need a lifting from this to P\<^sup>+ *)
   term real
   term of_real
-  oops
+  oops 
 
 lemma kpower_T_when_not_wait:
   assumes "\<forall>t\<^sub>0. \<^bold>{ \<not>wait \<and> t = \<guillemotleft>t\<^sub>0\<guillemotright> \<^bold>} T(X) \<^bold>{ \<not>wait \<longrightarrow> t = \<guillemotleft>t\<^sub>0\<guillemotright>+\<guillemotleft>c\<guillemotright> \<^bold>}"
@@ -751,7 +751,39 @@ next
     using Suc sledgehammer*)
 qed
 
+lemma kpower_kcomp_idem: "f\<^sup>* ; f\<^sup>* = f\<^sup>*"
+proof -
+  have "f\<^sup>* ; f\<^sup>* = ((\<Sqinter>i\<in>UNIV. kpower f i) ; (\<Sqinter>i\<in>UNIV. kpower f i))"
+    by (simp add:kstar_alt)
+  also have "... = (\<Sqinter>i\<in>UNIV. (kpower f i ; (\<Sqinter>i\<in>UNIV. kpower f i)))"
+    unfolding Nondet_choice_def 
+    by (auto simp add:fun_eq_iff kcomp_def)
+  also have "... = (\<Sqinter>i\<in>UNIV. (\<Sqinter>z\<in>UNIV. (kpower f i ; kpower f z)))"
+    unfolding Nondet_choice_def 
+    by (auto simp add:fun_eq_iff kcomp_def)
+  also have "... = (\<Sqinter>i\<in>UNIV. (\<Sqinter>z\<in>UNIV. (kpower f (i + z))))"
+    by (simp add:kpower_kcomp_sum)
+  also have "... = (\<Sqinter>i\<in>UNIV. kpower f i)"
+    unfolding Nondet_choice_def 
+    apply (auto simp add:fun_eq_iff kcomp_def)
+    by (metis add_0)
+  also have "... = f\<^sup>*"
+    by (simp add:kstar_alt)
+  finally show ?thesis .
+qed
 
+lemma
+  assumes "\<^bold>{ t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> \<^bold>} X \<^bold>{ \<not> wait \<longrightarrow> (t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright> \<and> P) \<^bold>}"
+          "\<^bold>{ \<not> wait \<and> t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright> \<and> P \<^bold>} T(Y) \<^bold>{ Q \<^bold>}"
+    shows "\<^bold>{ t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> \<^bold>} X ; T(Y) \<^bold>{ Q \<^bold>}"
+
+lemma
+  assumes "\<^bold>{ t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> \<^bold>} X\<^sup>+ \<^bold>{ t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright> \<longrightarrow> Q\<^bold>}"
+          "\<^bold>{ t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright> \<and> Q \<^bold>} X\<^sup>+ \<^bold>{ (\<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright>+1 \<le> t \<and> t < \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright>+1+\<guillemotleft>l\<guillemotright>) \<longrightarrow> R \<^bold>}"
+  shows "\<^bold>{ t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright> \<^bold>} X\<^sup>+ \<^bold>{ (t = \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright> \<longrightarrow> Q) \<and> ((\<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright>+1 \<le> t \<and> t < \<guillemotleft>\<epsilon>\<^sub>s\<guillemotright>+\<guillemotleft>k\<guillemotright>+1+\<guillemotleft>l\<guillemotright>) \<longrightarrow> R) \<^bold>}"
+proof -
+  have "X\<^sup>+ = X\<^sup>+ ; X\<^sup>+"
+    sledgehammer
 
 lemma
   assumes (* I is invariant over 'k' iterations, 
@@ -992,7 +1024,7 @@ lemma
   fixes k::nat
   assumes "AV > 0" "real k < pi/AV" "c > 0 \<longrightarrow> real (k+Cycle*(c-1)) < pi/AV"
   shows
-  "\<forall>m\<le>c. 
+  "\<forall>m\<le>c.
    \<^bold>{ MBC = k \<and> state = DTurningJunction \<and> \<not> wait \<^bold>}
    kpower (T(Ctrl) ; Step (TimeScale*Cycle)) m
    \<^bold>{ \<not> wait \<longrightarrow> MBC = k+Cycle*m \<and> state = DTurningJunction \<^bold>}"
@@ -1042,7 +1074,11 @@ unfolding kstar_one_def T_def Ctrl_def (*EvolveUntil_def TimerEvo_def T_def*)
         thm hoare_if_then_else
         apply (hoare_help_rs ; hoare_help_rs?)+
         using non_zeros(1) non_zeros(2) apply linarith+
-        by (hoare_help_rs) 
+        by (hoare_help_rs)
+
+(* Is below really supposed to be state = DTurning or
+   state = DTurningJunction instead? *)
+(*
 lemma
   assumes  "AV > 0"
   shows
@@ -1059,7 +1095,22 @@ lemma
   apply (hoare_help_rs)
   thm SimSMovement_def
      defer
+  unfolding EvolveUntil_def T_def TimerEvo_def
      apply (hoare_help_rs)
+  using non_zeros(1) non_zeros(2) apply force+
+       apply (hoare_help_rs)
+  using non_zeros(1) non_zeros(2) apply force+
+      apply (hoare_help_rs)
+      defer
+      apply (hoare_help_rs)
+  using non_zeros(1) non_zeros(2) apply force+
+            apply (hoare_help_rs)
+    using non_zeros(1) non_zeros(2) apply force+
+
+        apply (hoare_help_rs)
+      defer
+    apply (hoare_help_rs)
+    
   using assms divide_pos_pos pi_gt_zero apply fastforce
           defer
        apply (simp_all)
@@ -1079,7 +1130,7 @@ lemma
         using non_zeros(1) non_zeros(2) apply linarith+
         by (hoare_help_rs)        
 
-
+*)
 lemma
   assumes "AV > 0" "(Cycle*k) < (pi/AV)"
   shows
@@ -1124,7 +1175,7 @@ lemma
       avRW = -AV*axisLength/(2*RADIUS) \<and>
       yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0) \<^bold>}"
   unfolding kstar_one_def T_def Ctrl_def EvolveUntil_def
-  apply (hoare_help)
+  apply (hoare_help_rs)
   apply (rule hoare_kcomp[where R="(\<not>executing \<and> state = DTurning \<and> MBC \<le> (pi/AV) \<and> avLW = AV*axisLength/(2*RADIUS) \<and> avRW = -AV*axisLength/(2*RADIUS) \<and>
       yw = yw\<^sub>0 - t*AV \<and> mx = mx\<^sub>0 \<and> my = my\<^sub>0)\<^sup>e"])
   unfolding T_def Ctrl_def EvolveUntil_def

@@ -1313,6 +1313,16 @@ next
   then show ?case sorry
 qed
 
+lemma hoare_NonDet_index:
+  assumes "\<forall>k\<le>m. \<^bold>{P\<^bold>} X k \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} \<Sqinter>i\<in>{0..m}. X i \<^bold>{Q\<^bold>}"
+  using assms by (wlp_full)
+
+lemma
+  assumes "\<forall>k\<le>m. \<^bold>{P\<^bold>} kpower X k \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} X\<^bsup>m\<^esup> \<^bold>{Q\<^bold>}"
+  apply (simp add:kstar_fixed_def)
+  using assms by (rule hoare_NonDet_index)
 
 (* abbreviation (input) "TimerEvo \<delta> a \<sigma> B \<equiv> g_dl_ode_frame a \<sigma> (@B \<and> $timer \<le> \<delta>)\<^sub>e" *)
 method hoare_help_rs uses add = ( 
@@ -1342,6 +1352,11 @@ method hoare_help_rs uses add = (
      )+, 
    (subst WHILE_unroll_IF[symmetric])?
   )+,(tactic distinct_subgoals_tac)?
+
+lemma hoare_kcomp_nmods_rhs:
+  assumes "Y nmods Q" "\<^bold>{P\<^bold>} X \<^bold>{Q\<^bold>}"
+  shows "\<^bold>{P\<^bold>} X ; Y \<^bold>{Q\<^bold>}"
+  using assms(1) assms(2) hoare_kcomp_inv_rhs nmods_invariant by blast
 
 end
 

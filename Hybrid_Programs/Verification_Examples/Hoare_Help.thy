@@ -30,11 +30,11 @@ lemma
   oops
 
 
-lemma hoare_strengthen_post:
+(*lemma hoare_strengthen_post:
   assumes "\<^bold>{P\<^bold>} X \<^bold>{Q \<and> T \<and> R\<^bold>}"
   shows "\<^bold>{P\<^bold>} X \<^bold>{Q \<and> R\<^bold>}"
   using assms
-  by (simp add: hoare_conj_pos)
+  by (simp add: hoare_conj_pos)*)
   
 lemma hoare_strengthen_pos_universal:
   assumes "`U`" "\<^bold>{P\<^bold>} X \<^bold>{R\<^bold>}" 
